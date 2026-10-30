@@ -44,6 +44,9 @@ Légende : `[ ]` non exécuté, `[x]` réussi, `[~]` bloqué ou défaut constat�
 - [ ] Importer `memo-conflit.zip` après `memo-media-2.zip` : carte en conflit, deux variantes conservées.
 - [ ] Refaire l'ordre inverse : vérifier si la variante principale change (défaut QA-01 attendu).
 - [ ] Vérifier que l'interface permet de choisir la variante principale ; si non, noter le blocage.
+- [ ] Sélectionner un dossier de ZIP plus gros que l'espace libre : l'avertissement s'affiche et propose « Choisir un autre disque… ».
+- [ ] Choisir un autre disque, créer la bibliothèque : la sélection d'archives reste affichée et l'avertissement disparaît.
+- [ ] Choisir un dossier contenant déjà une bibliothèque Memo : elle est ouverte, pas recréée.
 
 ### 1.3 Réimport et personnalisation
 
