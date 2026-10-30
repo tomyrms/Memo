@@ -109,17 +109,47 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <InfoBar
-                    x:Name="DemoBar"
-                    Grid.Row="0"
-                    Margin="32,20,32,0"
-                    Title="Mode démonstration"
-                    Message="Les souvenirs affichés sont synthétiques. Importez un export pour ouvrir votre bibliothèque."
-                    Severity="Informational">
-                    <InfoBar.ActionButton>
-                        <Button Click="OnImportClick" Content="Importer" />
-                    </InfoBar.ActionButton>
-                </InfoBar>
+                <StackPanel Grid.Row="0">
+                    <!-- Dernière bibliothèque inaccessible : l'échec reste visible et
+                         l'utilisateur choisit explicitement la suite du parcours. -->
+                    <InfoBar
+                        x:Name="RecoveryBar"
+                        Margin="32,20,32,0"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Warning"
+                        Title="La dernière bibliothèque ne s'ouvre plus">
+                        <InfoBar.Content>
+                            <StackPanel Spacing="8">
+                                <TextBlock
+                                    x:Name="RecoveryMessage"
+                                    Style="{StaticResource MemoSecondaryTextStyle}"
+                                    TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button
+                                        Click="OnOpenAnotherLibrary"
+                                        Content="Ouvrir une autre bibliothèque"
+                                        Style="{StaticResource MemoPrimaryButtonStyle}" />
+                                    <Button
+                                        Click="OnContinueDemo"
+                                        Content="Continuer en démonstration"
+                                        Style="{StaticResource MemoSecondaryButtonStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </InfoBar.Content>
+                    </InfoBar>
+
+                    <InfoBar
+                        x:Name="DemoBar"
+                        Margin="32,20,32,0"
+                        Title="Mode démonstration"
+                        Message="Les souvenirs affichés sont synthétiques. Importez un export pour ouvrir votre bibliothèque."
+                        Severity="Informational">
+                        <InfoBar.ActionButton>
+                            <Button Click="OnImportClick" Content="Importer" />
+                        </InfoBar.ActionButton>
+                    </InfoBar>
+                </StackPanel>
 
                 <Frame
                     x:Name="ContentFrame"

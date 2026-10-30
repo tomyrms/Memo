@@ -356,29 +356,21 @@ public sealed partial class LibraryPage : Page
             return;
         }
 
-        // Une seule écriture par valeur cible, puis une seule mise à jour d'UI,
-        // au lieu d'un aller-retour et d'un rechargement complet par souvenir.
-        var toAdd = cards.Where(c => !c.IsFavorite).Select(c => c.Id).ToList();
-        var toRemove = cards.Where(c => c.IsFavorite).Select(c => c.Id).ToList();
-        var changed = new List<long>(cards.Count);
+        // Sélection mixte : une seule cible cohérente au lieu d'inverser chaque
+        // élément séparément. Si au moins un souvenir n'est pas favori, tout le
+        // devient ; si tous le sont déjà, tout est retiré. Une seule écriture,
+        // puis une seule mise à jour d'UI.
+        var target = !cards.All(c => c.IsFavorite);
+        var ids = cards.Select(c => c.Id).Distinct().ToList();
 
         try
         {
-            if (toAdd.Count > 0)
-            {
-                await AppState.Current.SetFavoritesAsync(toAdd, true);
-                changed.AddRange(toAdd);
-            }
-            if (toRemove.Count > 0)
-            {
-                await AppState.Current.SetFavoritesAsync(toRemove, false);
-                changed.AddRange(toRemove);
-            }
+            await AppState.Current.SetFavoritesAsync(ids, target);
         }
         finally
         {
-            // Même en cas d'échec partiel, la vue reflète ce qui a été écrit.
-            UpdateCards(changed);
+            // Même en cas d'échec, la vue reflète l'état réellement persisté.
+            UpdateCards(ids);
         }
     }
 
@@ -389,26 +381,19 @@ public sealed partial class LibraryPage : Page
             return;
         }
 
-        var toExclude = cards.Where(c => !c.IsExcluded).Select(c => c.Id).ToList();
-        var toRestore = cards.Where(c => c.IsExcluded).Select(c => c.Id).ToList();
-        var changed = new List<long>(cards.Count);
+        // Même règle pour Masquer : si au moins un souvenir reste visible dans
+        // les suggestions, toute la sélection est masquée ; si tous sont déjà
+        // masqués, toute la sélection est réintégrée.
+        var target = !cards.All(c => c.IsExcluded);
+        var ids = cards.Select(c => c.Id).Distinct().ToList();
 
         try
         {
-            if (toExclude.Count > 0)
-            {
-                await AppState.Current.SetExclusionsAsync(toExclude, true);
-                changed.AddRange(toExclude);
-            }
-            if (toRestore.Count > 0)
-            {
-                await AppState.Current.SetExclusionsAsync(toRestore, false);
-                changed.AddRange(toRestore);
-            }
+            await AppState.Current.SetExclusionsAsync(ids, target);
         }
         finally
         {
-            UpdateCards(changed);
+            UpdateCards(ids);
         }
     }
 
