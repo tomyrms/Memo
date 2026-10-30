@@ -1,7 +1,9 @@
 using Memo.App.Services;
+using Memo.App.Ui;
 using Memo.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using System.Runtime.InteropServices;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -15,6 +17,9 @@ public sealed partial class ImportsPage : Page
     // Empêche le rechargement de la liste des espaces de réécrire la sélection
     // mémorisée pendant que les éléments sont ajoutés.
     private bool _refreshingSpaces;
+    // WinUI n'autorise qu'un ContentDialog à la fois : ce verrou évite qu'un
+    // double clic ou un sélecteur encore ouvert fasse planter la page.
+    private bool _dialogOpen;
 
     public ImportsPage()
     {
@@ -79,18 +84,31 @@ public sealed partial class ImportsPage : Page
         var hasLibrary = AppState.Current.Library is not null;
         NoLibraryPanel.Visibility = hasLibrary ? Visibility.Collapsed : Visibility.Visible;
         SpacePanel.Visibility = hasLibrary ? Visibility.Visible : Visibility.Collapsed;
+        LibraryPanel.Visibility = hasLibrary ? Visibility.Visible : Visibility.Collapsed;
         ArchivePanel.Visibility = hasLibrary ? Visibility.Visible : Visibility.Collapsed;
         ImportButton.IsEnabled = hasLibrary;
+        UpdateLibraryLocationText();
         IntroText.Text = hasLibrary
             ? "Ajoutez les ZIP d'un même export, dans l'ordre que vous voulez. Les archives suivantes complètent la bibliothèque sans effacer vos choix."
             : "Créez ou ouvrez une bibliothèque pour commencer. Vous pourrez ensuite y ajouter les archives de votre export.";
+    }
 
-        if (!hasLibrary && _staged.Count > 0)
+    /// <summary>
+    /// Affiche le dossier réel de la bibliothèque et l'espace libre du disque.
+    /// Le choix du disque reste visible même quand la sélection tient.
+    /// </summary>
+    private void UpdateLibraryLocationText()
+    {
+        if (AppState.Current.Library is null || string.IsNullOrEmpty(AppState.Current.LibraryPath))
         {
-            // La bibliothèque a été fermée : les chemins préparés ne sont plus
-            // rattachables et aucun import ne peut aboutir.
-            _staged.Clear();
+            LibraryPathText.Text = string.Empty;
+            return;
         }
+
+        var free = GetFreeSpaceOnLibraryDrive();
+        LibraryPathText.Text = free is long bytes
+            ? $"{AppState.Current.LibraryPath} · {FormatSize(bytes)} libres"
+            : AppState.Current.LibraryPath;
     }
 
     private void OnSpaceChanged(object sender, SelectionChangedEventArgs e)
@@ -248,7 +266,8 @@ public sealed partial class ImportsPage : Page
             {
                 SelectionWarning.Text =
                     $"Espace insuffisant sur le disque de la bibliothèque : {FormatSize(available)} libres, " +
-                    $"environ {FormatSize(required)} nécessaires. Choisissez une bibliothèque sur un autre disque.";
+                    $"environ {FormatSize(required)} nécessaires. Choisissez un autre disque ci-dessus ; " +
+                    "la sélection actuelle sera conservée.";
                 SelectionWarning.Visibility = Visibility.Visible;
             }
             else
@@ -260,6 +279,8 @@ public sealed partial class ImportsPage : Page
         {
             SelectionWarning.Visibility = Visibility.Collapsed;
         }
+
+        UpdateLibraryLocationText();
     }
 
     private static long? GetFreeSpaceOnLibraryDrive()
@@ -409,7 +430,7 @@ public sealed partial class ImportsPage : Page
             {
                 Notice.Title = "Espace disque insuffisant";
                 Notice.Message = $"Il reste {FormatSize(availableBytes)} sur le disque de la bibliothèque, " +
-                                 $"mais environ {FormatSize(required)} sont nécessaires. Créez une bibliothèque sur un autre disque.";
+                                 $"mais environ {FormatSize(required)} sont nécessaires. Choisissez un autre disque ci-dessus.";
                 Notice.Severity = InfoBarSeverity.Error;
                 Notice.IsOpen = true;
                 return;
@@ -564,7 +585,7 @@ public sealed partial class ImportsPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(box.Text))
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(box.Text))
         {
             try
             {
@@ -592,6 +613,210 @@ public sealed partial class ImportsPage : Page
     }
 
     /// <summary>
+    /// Crée une bibliothèque sur un autre disque sans quitter l'écran d'import.
+    /// La sélection d'archives reste en place : après la bascule, le contrôle
+    /// d'espace est recalculé et l'import peut démarrer sur le nouveau disque.
+    /// </summary>
+    private async void OnChangeDisk(object sender, RoutedEventArgs e)
+    {
+        if (AppState.Current.Library is null)
+        {
+            return;
+        }
+
+        var drives = DriveInfo.GetDrives()
+            .Where(drive => drive.IsReady && drive.DriveType is DriveType.Fixed or DriveType.Removable)
+            .OrderBy(drive => drive.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (drives.Count == 0)
+        {
+            ShowLibraryError("Aucun disque disponible", "Aucun disque accessible n'a été trouvé.");
+            return;
+        }
+
+        var required = _stagedBytes > 0 ? (long)(_stagedBytes * 1.15) + 1_000_000_000 : 0;
+        // La sélection appartient à l'écran, pas à la bibliothèque : on la
+        // fige ici pour la restaurer après la bascule, même si un rafraîchissement
+        // intermédiaire vide la liste.
+        var stagedSnapshot = _staged.ToList();
+        var archiveCount = _stagedArchives;
+        var driveBox = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var drive in drives)
+        {
+            driveBox.Items.Add(new ComboBoxItem
+            {
+                Content = $"{drive.Name.TrimEnd('\\')} · {FormatSize(drive.AvailableFreeSpace)} libres sur {FormatSize(drive.TotalSize)}",
+                Tag = drive
+            });
+        }
+
+        // Proposer d'abord un disque qui peut réellement recevoir la sélection,
+        // sinon celui qui offre le plus de place.
+        var preferred = drives
+            .Where(drive => required == 0 || drive.AvailableFreeSpace >= required)
+            .OrderByDescending(drive => drive.AvailableFreeSpace)
+            .FirstOrDefault() ?? drives[0];
+        driveBox.SelectedIndex = drives.IndexOf(preferred);
+
+        var nameBox = new TextBox
+        {
+            Header = "Nom du dossier",
+            Text = "Memo",
+            MaxLength = 80
+        };
+        var preview = new TextBlock
+        {
+            Style = Widgets.Style("MemoCaptionTextStyle"),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "La bibliothèque actuelle reste intacte. Les prochains imports seront enregistrés sur le disque choisi ; la sélection d'archives est conservée.",
+            TextWrapping = TextWrapping.Wrap,
+            Style = Widgets.Style("MemoSecondaryTextStyle")
+        });
+        content.Children.Add(driveBox);
+        content.Children.Add(nameBox);
+        content.Children.Add(preview);
+
+        var dialog = new ContentDialog
+        {
+            Title = "Choisir un autre disque",
+            Content = content,
+            PrimaryButtonText = "Créer la bibliothèque",
+            CloseButtonText = "Annuler",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        void RefreshPreview()
+        {
+            if (driveBox.SelectedItem is not ComboBoxItem { Tag: DriveInfo drive })
+            {
+                return;
+            }
+
+            var safe = SafeFolderName(nameBox.Text);
+            if (safe.Length == 0)
+            {
+                preview.Text = "Saisissez un nom de dossier valide.";
+                dialog.IsPrimaryButtonEnabled = false;
+                return;
+            }
+
+            var root = Path.Combine(drive.Name, safe);
+            var folderAvailable = true;
+            var openExisting = false;
+            string? issue = null;
+            try
+            {
+                if (Directory.Exists(root))
+                {
+                    // Un dossier qui contient déjà un catalogue Memo est une
+                    // bibliothèque existante : on la propose à l'ouverture au
+                    // lieu de refuser un dossier non vide.
+                    openExisting =
+                        File.Exists(Path.Combine(root, "library.json")) &&
+                        File.Exists(Path.Combine(root, "catalog.db"));
+
+                    if (!openExisting && Directory.EnumerateFileSystemEntries(root).Any())
+                    {
+                        folderAvailable = false;
+                        issue = "Ce dossier existe déjà et n'est pas vide. Choisissez un autre nom.";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                folderAvailable = false;
+                issue = $"Dossier illisible : {ex.Message}";
+            }
+
+            if (required > drive.AvailableFreeSpace)
+            {
+                var space = $"Espace insuffisant pour la sélection actuelle : {FormatSize(required)} nécessaires.";
+                issue = issue is null ? space : $"{issue} {space}";
+            }
+
+            dialog.PrimaryButtonText = openExisting ? "Ouvrir cette bibliothèque" : "Créer la bibliothèque";
+            preview.Text = openExisting
+                ? $"{root} · bibliothèque Memo existante"
+                : issue is null
+                    ? $"{root} · {FormatSize(drive.AvailableFreeSpace)} libres"
+                    : $"{root} · {issue}";
+            dialog.IsPrimaryButtonEnabled = folderAvailable;
+        }
+
+        driveBox.SelectionChanged += (_, _) => RefreshPreview();
+        nameBox.TextChanged += (_, _) => RefreshPreview();
+        RefreshPreview();
+
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (driveBox.SelectedItem is not ComboBoxItem { Tag: DriveInfo selectedDrive })
+        {
+            return;
+        }
+
+        var folderName = SafeFolderName(nameBox.Text);
+        if (folderName.Length == 0)
+        {
+            return;
+        }
+
+        var destination = Path.Combine(selectedDrive.Name, folderName);
+        var existingLibrary =
+            File.Exists(Path.Combine(destination, "library.json")) &&
+            File.Exists(Path.Combine(destination, "catalog.db"));
+        try
+        {
+            if (existingLibrary)
+            {
+                await AppState.Current.OpenLibraryAsync(destination);
+            }
+            else
+            {
+                await AppState.Current.CreateLibraryAsync(destination, nameBox.Text.Trim());
+            }
+
+            if (stagedSnapshot.Count > 0)
+            {
+                _staged.Clear();
+                _staged.AddRange(stagedSnapshot);
+            }
+
+            var selection = archiveCount > 0
+                ? $"Les {archiveCount} archive(s) sélectionnées sont conservées."
+                : "Aucune archive n'était sélectionnée.";
+            var action = existingLibrary ? "Bibliothèque ouverte" : "Bibliothèque créée";
+            await AfterLibraryReadyAsync(
+                $"{action} sur {selectedDrive.Name.TrimEnd('\\')}",
+                $"Les prochains imports seront enregistrés dans {destination}. {selection}");
+        }
+        catch (Exception ex)
+        {
+            ShowLibraryError("Création impossible", ex.Message);
+        }
+    }
+
+    private static string SafeFolderName(string? name)
+    {
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var safe = string.Join('-', trimmed.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+        return safe.TrimEnd('.', ' ');
+    }
+
+    /// <summary>
     /// Crée une bibliothèque depuis l'écran Imports : même parcours que les
     /// Réglages, pour que le premier lancement n'impose pas de détour.
     /// </summary>
@@ -607,7 +832,7 @@ public sealed partial class ImportsPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(nameBox.Text))
+        if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(nameBox.Text))
         {
             return;
         }
@@ -684,6 +909,39 @@ public sealed partial class ImportsPage : Page
         Notice.Message = message;
         Notice.Severity = InfoBarSeverity.Success;
         Notice.IsOpen = true;
+    }
+
+    /// <summary>
+    /// Ouvre un dialogue unique. Une deuxième demande pendant qu'un dialogue
+    /// est déjà ouvert est ignorée avec un message au lieu de lever
+    /// « Only a single ContentDialog can be open at any time ».
+    /// </summary>
+    private async Task<ContentDialogResult?> ShowDialogAsync(ContentDialog dialog)
+    {
+        if (_dialogOpen)
+        {
+            ShowLibraryError(
+                "Dialogue déjà ouvert",
+                "Fermez la fenêtre déjà affichée avant d'en ouvrir une autre.");
+            return null;
+        }
+
+        _dialogOpen = true;
+        try
+        {
+            return await dialog.ShowAsync();
+        }
+        catch (COMException)
+        {
+            ShowLibraryError(
+                "Ouverture impossible",
+                "Une autre fenêtre est encore ouverte. Fermez-la, puis réessayez.");
+            return null;
+        }
+        finally
+        {
+            _dialogOpen = false;
+        }
     }
 
     private void ShowLibraryError(string title, string message)

@@ -76,6 +76,33 @@
             </Border>
 
             <Border
+                x:Name="LibraryPanel"
+                Style="{StaticResource MemoCardBorderStyle}"
+                Padding="16"
+                Visibility="Collapsed">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Bibliothèque" Style="{StaticResource MemoSectionTextStyle}" />
+                        <TextBlock
+                            x:Name="LibraryPathText"
+                            Style="{StaticResource MemoCaptionTextStyle}"
+                            TextTrimming="CharacterEllipsis"
+                            TextWrapping="NoWrap" />
+                    </StackPanel>
+                    <Button
+                        Grid.Column="1"
+                        Click="OnChangeDisk"
+                        Content="Choisir un autre disque…"
+                        Style="{StaticResource MemoSecondaryButtonStyle}"
+                        VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <Border
                 x:Name="ArchivePanel"
                 AllowDrop="True"
                 Background="{ThemeResource MemoSurfaceBrush}"
