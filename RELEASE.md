@@ -32,6 +32,7 @@ Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 - WebP sous extension `.png` reconnu par signature.
 - Rotation appliquée une seule fois ; alignement des calques dans le repère affiché.
 - Archives corrompues, entrées `../`, conflits de rôle et médias manquants produisent un diagnostic sans bloquer l'application.
+- L'installateur inclut désormais `Memo.pri` et les fichiers XAML compilés (`.xbf`) ; l'application installée démarre réellement, ce qui n'était pas le cas de la première archive publiée.
 - 61 tests Core, 69 tests Media et 12 tests d’intégration au moment de la release (142 au total).
 
 ## Limites connues
@@ -49,7 +50,9 @@ Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 
 ## Vérifications effectuées
 
-- Build Release, tests Core/Media, import UI de 6 ZIP (22 souvenirs), sauvegarde/restauration de 23 souvenirs, analyse locale (13 OCR, 13 empreintes), lecture HEVC et photo avec calque, export MP4 auto-vérifié, installateur compilé et testé en installation/désinstallation silencieuse.
+- Build Release, tests Core/Media, import UI de 6 ZIP (22 souvenirs), sauvegarde/restauration de 23 souvenirs, analyse locale (13 OCR, 13 empreintes), lecture HEVC et photo avec calque, export MP4 auto-vérifié.
+- Installateur 0.1.0 reconstruit après la passe de correction : installation silencieuse dans `%LOCALAPPDATA%\Programs\Memo`, démarrage réel de la version installée sur la bibliothèque de 838 souvenirs, désinstallation silencieuse sans résidu du dossier d'installation.
+- Publication vérifiée : `Memo.pri` et 17 fichiers `.xbf` présents avant compilation de l'installateur.
 - Captures d'écran des écrans principaux en 1320×860 et 1040×1800.
 
 ## Artefacts
