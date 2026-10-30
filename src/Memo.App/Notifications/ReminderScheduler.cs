@@ -187,7 +187,7 @@ public static class ReminderScheduler
         return new ReminderScheduleResult(
             true,
             taskName,
-            $"Rappel quotidien activé à {start}. La tâche ne s'exécute que si Windows est allumé et l'utilisateur connecté.",
+            $"Rappel quotidien activé à {start}. La tâche s'exécute même fenêtre fermée, uniquement si Windows est allumé et l'utilisateur connecté.",
             process.ExitCode,
             process.StandardOutput,
             process.StandardError,
@@ -214,7 +214,7 @@ public static class ReminderScheduler
             return new ReminderScheduleResult(
                 true,
                 taskName,
-                "Rappel désactivé : la tâche planifiée a été supprimée.",
+                "Rappel désactivé : la tâche planifiée a été supprimée. Aucune notification ne sera plus envoyée pour cette bibliothèque.",
                 process.ExitCode,
                 process.StandardOutput,
                 process.StandardError);
@@ -276,7 +276,7 @@ public static class ReminderScheduler
         }
 
         var fields = ParseList(process.StandardOutput);
-        var status = Find(fields, "Statut", "Status");
+        var status = Find(fields, "Statut", "État", "Status");
         var scheduleType = Find(fields, "Type de planification", "Schedule Type");
         var startText = Find(fields, "Heure de début", "Start Time");
         var nextText = Find(fields, "Prochaine exécution", "Next Run Time");

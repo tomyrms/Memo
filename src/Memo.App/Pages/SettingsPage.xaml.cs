@@ -1,3 +1,4 @@
+using System.Globalization;
 using Memo.App.Analysis;
 using Memo.App.Notifications;
 using Memo.App.Services;
@@ -11,6 +12,8 @@ namespace Memo.App.Pages;
 public sealed partial class SettingsPage : Page
 {
     private bool _loading = true;
+    private bool _reminderBusy;
+    private int _reminderStatusVersion;
 
     public SettingsPage()
     {
@@ -22,6 +25,7 @@ public sealed partial class SettingsPage : Page
     {
         _loading = true;
         var settings = AppState.Current.Settings;
+        ReminderStatus.Text = string.Empty;
         TimeZoneBox.Items.Clear();
 
         var seenZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -45,7 +49,11 @@ public sealed partial class SettingsPage : Page
         DiscreetSwitch.IsOn = settings.DiscreetNotifications;
         OcrSwitch.IsOn = settings.OcrEnabled;
         FacesSwitch.IsOn = settings.FacesEnabled;
-        if (TimeSpan.TryParse(settings.ReminderTime, out var time))
+        if (TimeSpan.TryParseExact(
+                settings.ReminderTime,
+                @"hh\:mm",
+                CultureInfo.InvariantCulture,
+                out var time))
         {
             ReminderTime.SelectedTime = time;
         }
@@ -60,7 +68,45 @@ public sealed partial class SettingsPage : Page
             : $"{cards} souvenirs · {AppState.Current.Albums.Count} album(s)";
 
         _loading = false;
+        UpdateReminderControls();
         _ = UpdateReminderStatusAsync();
+    }
+
+    private void UpdateReminderControls()
+    {
+        var libraryAvailable = AppState.Current.Library is not null;
+        RemindersSwitch.IsEnabled = libraryAvailable && !_reminderBusy;
+        ReminderTime.IsEnabled = libraryAvailable && RemindersSwitch.IsOn && !_reminderBusy;
+        DiscreetSwitch.IsEnabled = libraryAvailable && RemindersSwitch.IsOn && !_reminderBusy;
+        TestReminderButton.IsEnabled = libraryAvailable && !_reminderBusy;
+    }
+
+    /// <summary>Change l'interrupteur sans déclencher le gestionnaire Toggled.</summary>
+    private void SetRemindersSwitch(bool value)
+    {
+        var loading = _loading;
+        _loading = true;
+        RemindersSwitch.IsOn = value;
+        _loading = loading;
+    }
+
+    private void SetReminderTime(string value)
+    {
+        if (!TimeSpan.TryParseExact(value, @"hh\:mm", CultureInfo.InvariantCulture, out var time))
+        {
+            return;
+        }
+
+        var loading = _loading;
+        _loading = true;
+        ReminderTime.SelectedTime = time;
+        _loading = loading;
+    }
+
+    private string SelectedReminderTime()
+    {
+        var selected = ReminderTime.SelectedTime ?? TimeSpan.FromHours(9);
+        return selected.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
     }
 
     private static void SelectByTag(ComboBox box, string tag)
@@ -162,49 +208,93 @@ public sealed partial class SettingsPage : Page
 
     private async void OnRemindersChanged(object sender, RoutedEventArgs e)
     {
-        if (_loading)
+        if (_loading || _reminderBusy)
         {
             return;
         }
 
-        var settings = AppState.Current.Settings with { RemindersEnabled = RemindersSwitch.IsOn };
-        await SaveAsync(settings);
-
-        if (AppState.Current.Library is null)
-        {
-            if (RemindersSwitch.IsOn)
-            {
-                Show("Rappel non planifié", "Ouvrez une bibliothèque avant d'activer un rappel.", InfoBarSeverity.Warning);
-            }
-            return;
-        }
-
+        var enabled = RemindersSwitch.IsOn;
+        _reminderBusy = true;
+        UpdateReminderControls();
         try
         {
-            if (RemindersSwitch.IsOn)
+            var library = AppState.Current.Library;
+
+            if (enabled && library is null)
             {
+                SetRemindersSwitch(false);
+                Show("Rappel non activé", "Ouvrez une bibliothèque avant d'activer un rappel quotidien.", InfoBarSeverity.Warning);
+                return;
+            }
+
+            if (library is null)
+            {
+                await SaveAsync(AppState.Current.Settings with { RemindersEnabled = false });
+                await UpdateReminderStatusAsync();
+                return;
+            }
+
+            if (enabled)
+            {
+                var time = SelectedReminderTime();
                 var result = await ReminderScheduler.EnableAsync(
                     Environment.ProcessPath ?? "Memo.exe",
-                    AppState.Current.Library.Info.RootPath,
-                    settings.ReminderTime);
+                    library.Info.RootPath,
+                    time);
+
                 if (!result.Success)
                 {
-                    Show("Rappel non planifié", result.Message, InfoBarSeverity.Error);
+                    // Ne pas laisser l'interrupteur et le réglage cochés alors
+                    // qu'aucune tâche ne notifiera l'utilisateur.
+                    SetRemindersSwitch(false);
+                    await SaveAsync(AppState.Current.Settings with { RemindersEnabled = false });
+                    Show("Rappel non activé", result.Message, InfoBarSeverity.Error);
+                    await UpdateReminderStatusAsync();
+                    return;
                 }
-                else
+
+                await SaveAsync(AppState.Current.Settings with
                 {
-                    Show("Rappel activé", $"Une tâche Windows quotidienne est planifiée à {settings.ReminderTime}. Elle ne s'exécute que si Windows est allumé et l'utilisateur connecté.", InfoBarSeverity.Success);
-                }
+                    RemindersEnabled = true,
+                    ReminderTime = time
+                });
+                Show("Rappel activé", result.Message, InfoBarSeverity.Success);
             }
             else
             {
-                await ReminderScheduler.DisableAsync(AppState.Current.Library.Info.Id);
-                Show("Rappel désactivé", "La tâche planifiée a été supprimée.", InfoBarSeverity.Informational);
+                var result = await ReminderScheduler.DisableAsync(library.Info.Id);
+                if (!result.Success)
+                {
+                    // La tâche peut encore se déclencher : l'interrupteur doit
+                    // refléter la réalité, pas l'intention.
+                    SetRemindersSwitch(true);
+                    Show("Rappel toujours actif", result.Message, InfoBarSeverity.Error);
+                    await UpdateReminderStatusAsync();
+                    return;
+                }
+
+                await SaveAsync(AppState.Current.Settings with { RemindersEnabled = false });
+                Show("Rappel désactivé", result.Message, InfoBarSeverity.Informational);
             }
         }
         catch (Exception ex)
         {
+            if (enabled)
+            {
+                SetRemindersSwitch(false);
+                await SaveAsync(AppState.Current.Settings with { RemindersEnabled = false });
+            }
+            else
+            {
+                SetRemindersSwitch(true);
+            }
+
             Show("Rappel non configuré", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _reminderBusy = false;
+            UpdateReminderControls();
         }
 
         await UpdateReminderStatusAsync();
@@ -212,76 +302,194 @@ public sealed partial class SettingsPage : Page
 
     private async void OnReminderTimeChanged(TimePicker sender, TimePickerSelectedValueChangedEventArgs args)
     {
-        if (_loading)
+        if (_loading || _reminderBusy || args.NewTime is not TimeSpan selected)
         {
             return;
         }
 
-        var time = (args.NewTime ?? TimeSpan.FromHours(9)).ToString(@"hh\:mm");
-        var settings = AppState.Current.Settings with { ReminderTime = time };
-        await SaveAsync(settings);
-
-        if (settings.RemindersEnabled && AppState.Current.Library is not null)
+        _reminderBusy = true;
+        UpdateReminderControls();
+        try
         {
+            var previous = AppState.Current.Settings.ReminderTime;
+            var time = selected.ToString(@"hh\:mm", CultureInfo.InvariantCulture);
+            var settings = AppState.Current.Settings with { ReminderTime = time };
+            await SaveAsync(settings);
+
+            var library = AppState.Current.Library;
+            if (!settings.RemindersEnabled || library is null)
+            {
+                return;
+            }
+
             try
             {
-                await ReminderScheduler.DisableAsync(AppState.Current.Library.Info.Id);
-                await ReminderScheduler.EnableAsync(
+                // EnableAsync recrée la tâche (/F) : inutile de la supprimer
+                // avant, ce qui éviterait une fenêtre sans rappel si la
+                // création échoue.
+                var result = await ReminderScheduler.EnableAsync(
                     Environment.ProcessPath ?? "Memo.exe",
-                    AppState.Current.Library.Info.RootPath,
+                    library.Info.RootPath,
                     time);
+
+                if (!result.Success)
+                {
+                    // L'ancienne tâche peut encore exister à l'ancienne heure :
+                    // revenir au réglage effectif plutôt que d'afficher une
+                    // heure que Windows n'appliquera pas.
+                    await SaveAsync(AppState.Current.Settings with { ReminderTime = previous });
+                    SetReminderTime(previous);
+                    Show("Heure non appliquée", result.Message, InfoBarSeverity.Error);
+                }
+                else
+                {
+                    Show("Heure du rappel modifiée",
+                        $"La tâche s'exécute désormais chaque jour à {time}, même fenêtre fermée, si Windows est allumé et l'utilisateur connecté.",
+                        InfoBarSeverity.Success);
+                }
             }
             catch (Exception ex)
             {
+                await SaveAsync(AppState.Current.Settings with { ReminderTime = previous });
+                SetReminderTime(previous);
                 Show("Heure non appliquée", ex.Message, InfoBarSeverity.Warning);
             }
         }
+        finally
+        {
+            _reminderBusy = false;
+            UpdateReminderControls();
+        }
+
         await UpdateReminderStatusAsync();
     }
 
     private async void OnTestReminder(object sender, RoutedEventArgs e)
     {
-        if (AppState.Current.Library is null)
+        var library = AppState.Current.Library;
+        if (library is null)
         {
             Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de tester un rappel.", InfoBarSeverity.Warning);
             return;
         }
 
+        TestReminderButton.IsEnabled = false;
+        ReminderStatus.Text = "Test en cours…";
         try
         {
             var result = await ReminderRunner.RunAsync(
-                AppState.Current.Library.Info.RootPath,
-                new ReminderRunOptions { IgnoreRemindersSetting = true, IgnoreAlreadyNotified = true });
-            Show(result.NotificationShown ? "Notification envoyée" : "Notification non envoyée",
-                result.Diagnostic,
-                result.NotificationShown ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+                library.Info.RootPath,
+                new ReminderRunOptions
+                {
+                    IgnoreRemindersSetting = true,
+                    IgnoreAlreadyNotified = true,
+                    // Un essai ne doit ni consommer le rappel du jour ni
+                    // modifier l'historique des propositions.
+                    PersistState = false
+                });
+
+            if (result.NotificationShown)
+            {
+                ReminderStatus.Text = "Notification de test envoyée.";
+                Show("Notification de test envoyée",
+                    result.Diagnostic + " Le rappel du jour n'a pas été consommé par ce test.",
+                    InfoBarSeverity.Success);
+            }
+            else
+            {
+                ReminderStatus.Text = "Test sans notification.";
+                Show("Notification de test non affichée", result.Diagnostic, InfoBarSeverity.Warning);
+            }
         }
         catch (Exception ex)
         {
+            ReminderStatus.Text = "Test impossible.";
             Show("Test impossible", ex.Message, InfoBarSeverity.Error);
         }
+        finally
+        {
+            TestReminderButton.IsEnabled = AppState.Current.Library is not null;
+        }
+
+        await UpdateReminderStatusAsync();
     }
 
     private async Task UpdateReminderStatusAsync()
     {
-        if (AppState.Current.Library is null)
+        var version = ++_reminderStatusVersion;
+        var library = AppState.Current.Library;
+        var enabled = AppState.Current.Settings.RemindersEnabled;
+
+        if (library is null)
         {
-            ReminderStatus.Text = "Aucune bibliothèque ouverte.";
+            ReminderTaskState.Text = "Aucune bibliothèque ouverte.";
+            ReminderNextRun.Text = "Ouvrez une bibliothèque pour activer et vérifier un rappel.";
+            ReminderLastRun.Text = string.Empty;
+            TestReminderButton.IsEnabled = false;
             return;
         }
 
+        ReminderTaskState.Text = "Vérification de la tâche planifiée…";
+        ReminderNextRun.Text = string.Empty;
+        ReminderLastRun.Text = string.Empty;
+
         try
         {
-            var status = await ReminderScheduler.GetStatusAsync(AppState.Current.Library.Info.Id);
-            ReminderStatus.Text = status.Exists
-                ? $"Tâche planifiée · {status.StartTime} · {status.LastResultText}"
-                : "Aucune tâche planifiée.";
+            var status = await ReminderScheduler.GetStatusAsync(library.Info.Id);
+            if (version != _reminderStatusVersion)
+            {
+                return;
+            }
+
+            if (!status.Exists)
+            {
+                ReminderTaskState.Text = enabled
+                    ? "Aucune tâche planifiée alors que le rappel est coché. Désactivez puis réactivez le rappel."
+                    : "Aucune tâche planifiée : le rappel est désactivé.";
+                ReminderNextRun.Text = "Prochaine exécution : —";
+                ReminderLastRun.Text = string.IsNullOrWhiteSpace(status.Error)
+                    ? "Dernier résultat : —"
+                    : "État indisponible : " + status.Error;
+                return;
+            }
+
+            var schedule = status.StartTime is TimeOnly start
+                ? "tous les jours à " + start.ToString("HH:mm", CultureInfo.InvariantCulture)
+                : "planification quotidienne";
+            ReminderTaskState.Text = $"Tâche planifiée : {status.TaskName} · {schedule}"
+                + (enabled ? string.Empty : " · rappel décoché dans Memo");
+            ReminderNextRun.Text = status.NextRunAt is DateTimeOffset next
+                ? "Prochaine exécution : " + FormatMoment(next)
+                : "Prochaine exécution : non annoncée par Windows.";
+
+            var last = "Dernier résultat : " + status.LastResultText;
+            if (status.LastRunAt is DateTimeOffset ran)
+            {
+                last += " · dernière exécution le " + FormatMoment(ran);
+            }
+
+            if (!string.IsNullOrWhiteSpace(status.Status))
+            {
+                last += " · état Windows : " + status.Status;
+            }
+
+            ReminderLastRun.Text = last;
         }
         catch (Exception ex)
         {
-            ReminderStatus.Text = "État indisponible : " + ex.Message;
+            if (version != _reminderStatusVersion)
+            {
+                return;
+            }
+
+            ReminderTaskState.Text = "État de la tâche indisponible.";
+            ReminderNextRun.Text = string.Empty;
+            ReminderLastRun.Text = ex.Message;
         }
     }
+
+    private static string FormatMoment(DateTimeOffset value)
+        => value.ToLocalTime().ToString("dddd d MMMM yyyy à HH:mm", AppState.French);
 
     private async void OnDiscreetChanged(object sender, RoutedEventArgs e)
     {
