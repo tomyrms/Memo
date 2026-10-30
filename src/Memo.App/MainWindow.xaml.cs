@@ -4,6 +4,7 @@ using System.Text.Json;
 using Memo.Core;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Windows.Graphics;
 using Windows.UI;
 
@@ -11,7 +12,7 @@ namespace Memo.App;
 
 public sealed partial class MainWindow : Window
 {
-    private DateOnly? _pendingDay;
+    private (DateOnly Day, Guid? LibraryId)? _pendingDay;
     private bool _shellReady;
 
     // Tailles de référence en pixels logiques ; elles sont mises à l'échelle du moniteur.
@@ -117,14 +118,27 @@ public sealed partial class MainWindow : Window
     /// les années antérieures, hors souvenirs masqués et hors calques seuls.
     /// L'appel peut précéder le chargement de la bibliothèque (activation par
     /// notification) ; la sélection est alors rejouée quand la coquille est prête.
+    /// Si un identifiant est fourni, la bibliothèque courante doit correspondre :
+    /// sinon elle est rouverte et entièrement rechargée avant le calcul.
     /// </summary>
-    public void ShowDay(DateOnly day)
+    public void ShowDay(DateOnly day, Guid? libraryId = null)
     {
         if (!_shellReady)
         {
-            _pendingDay = day;
+            _pendingDay = (day, libraryId);
             return;
         }
+
+        if (libraryId is Guid expected && AppState.Current.LibraryId != expected)
+        {
+            _ = ReopenLibraryAndShowDayAsync(day, expected);
+            return;
+        }
+
+        // L'activation est satisfaite : la coquille a fini de charger la bonne
+        // bibliothèque, la priorité sur les ouvertures automatiques peut
+        // retomber.
+        AppState.Current.CompleteActivation();
 
         // Le jour de la charge utile peut dater (notification conservée dans
         // le Centre de notifications). L'anniversaire se calcule par rapport à
@@ -165,13 +179,70 @@ public sealed partial class MainWindow : Window
     private void OnShellReady(object? sender, EventArgs e)
     {
         _shellReady = true;
-        if (_pendingDay is not DateOnly day)
+        if (_pendingDay is not { } pending)
         {
             return;
         }
 
         _pendingDay = null;
-        ShowDay(day);
+        ShowDay(pending.Day, pending.LibraryId);
+    }
+
+    private async Task ReopenLibraryAndShowDayAsync(DateOnly day, Guid libraryId)
+    {
+        try
+        {
+            await AppState.Current.EnsureActivationLibraryAsync(libraryId, null);
+        }
+        catch (Exception ex)
+        {
+            AppState.Current.CompleteActivation();
+            ShowLibraryNotice("Bibliothèque introuvable", ex.Message);
+            return;
+        }
+
+        ShowDay(day, libraryId);
+    }
+
+    /// <summary>
+    /// Affiche un message d'erreur d'activation sans bloquer le démarrage : la
+    /// fenêtre peut ne pas encore avoir de XamlRoot au moment de l'appel.
+    /// </summary>
+    public void ShowLibraryNotice(string title, string message)
+    {
+        _ = ShowLibraryNoticeAsync(title, message);
+    }
+
+    private async Task ShowLibraryNoticeAsync(string title, string message)
+    {
+        try
+        {
+            if (Root.XamlRoot is null)
+            {
+                var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                void OnLoaded(object? sender, RoutedEventArgs e)
+                {
+                    Root.Loaded -= OnLoaded;
+                    loaded.TrySetResult();
+                }
+
+                Root.Loaded += OnLoaded;
+                await loaded.Task;
+            }
+
+            var dialog = new ContentDialog
+            {
+                Title = title,
+                Content = new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap },
+                CloseButtonText = "Fermer",
+                XamlRoot = Root.XamlRoot,
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            App.LogException(ex);
+        }
     }
 
     public void ApplyTheme(string theme)
@@ -447,6 +518,8 @@ public sealed partial class MainWindow : Window
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
+        // Une activation en attente ne doit pas survivre à la fenêtre.
+        AppState.Current.CompleteActivation();
         Current = null;
     }
 

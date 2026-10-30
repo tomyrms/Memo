@@ -86,6 +86,14 @@ public sealed partial class ImportService : IImportService
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Un seul import à la fois par bibliothèque. L'acquisition est
+        // réentrante : AppState peut tenir le verrou pour englober aussi la
+        // génération des miniatures.
+        using var operation = LibraryOperationGate.Acquire(
+            _catalog.RootPath,
+            LibraryOperationKind.Import);
+
         var startedAt = DateTimeOffset.UtcNow;
         var state = new CounterState();
         var diagnostics = new List<ImportDiagnostic>();

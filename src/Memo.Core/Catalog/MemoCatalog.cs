@@ -31,6 +31,10 @@ public sealed partial class MemoCatalog : IMemoCatalog
     public LibraryInfo Info => _info;
     public string RootPath => _info.RootPath;
     public string TimeZoneId => _info.TimeZoneId;
+
+    /// <summary>Version de schéma effective du catalogue, après migrations.</summary>
+    public int SchemaVersion { get; private set; }
+
     internal string DatabasePath { get; }
 
     public event EventHandler<string>? TimeZoneChanged;
@@ -52,29 +56,12 @@ public sealed partial class MemoCatalog : IMemoCatalog
             await journal.ExecuteScalarAsync(ct).ConfigureAwait(false);
         }
 
-        long version;
-        await using (var read = connection.CreateCommand())
-        {
-            read.CommandText = "PRAGMA user_version;";
-            version = Convert.ToInt64(await read.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
-        }
-
-        if (version > CatalogSchema.CurrentVersion)
-        {
-            throw new InvalidOperationException(
-                $"Le catalogue « {DatabasePath} » utilise une version plus récente ({version}) que cette version de Memo.");
-        }
-
-        if (version == 0)
-        {
-            await using var create = connection.CreateCommand();
-            create.CommandText = CatalogSchema.Create;
-            await create.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-
-            await using var setVersion = connection.CreateCommand();
-            setVersion.CommandText = $"PRAGMA user_version = {CatalogSchema.CurrentVersion};";
-            await setVersion.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-        }
+        // Les migrations lisent PRAGMA user_version et le journal
+        // schema_migrations, refusent une base plus récente, puis appliquent
+        // les versions manquantes de façon idempotente.
+        SchemaVersion = await CatalogMigrations
+            .ApplyAsync(connection, DatabasePath, ct)
+            .ConfigureAwait(false);
     }
 
     internal async Task<SqliteConnection> OpenConnectionAsync(CancellationToken ct)
@@ -360,6 +347,12 @@ public sealed partial class MemoCatalog : IMemoCatalog
 
     public async Task RecalculateClassificationAsync(string timeZoneId, CancellationToken ct = default)
     {
+        // Le recalcul fige les dates classées : il appartient aux opérations
+        // longues sérialisées par bibliothèque.
+        using var operation = LibraryOperationGate.Acquire(
+            RootPath,
+            LibraryOperationKind.TimeZoneChange);
+
         var timeZone = TimeZoneHelper.Resolve(timeZoneId);
         await using var connection = await OpenConnectionAsync(ct).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);

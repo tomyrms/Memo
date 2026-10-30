@@ -1,10 +1,34 @@
 namespace Memo.Core;
 
+/// <summary>Migration versionnée du catalogue. Le SQL doit rester idempotent.</summary>
+internal sealed record CatalogMigration(int Version, string Name, string Sql);
+
+/// <summary>
+/// Description du schéma du catalogue et de ses migrations.
+///
+/// La version 1 correspond au socle livré avec Memo 0.1.0 (elle n'est jamais
+/// rejouée sur une base existante : <c>PRAGMA user_version</c> vaut déjà 1).
+/// Chaque version suivante ajoute une migration idempotente et une ligne dans
+/// la table <c>schema_migrations</c>. Une base créée par une version plus
+/// récente est refusée à l'ouverture.
+/// </summary>
 internal static class CatalogSchema
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
-    public const string Create = """
+    public const string MigrationsTable = "schema_migrations";
+
+    /// <summary>Table de suivi des migrations appliquées.</summary>
+    public const string CreateMigrationsTable = """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL
+        );
+        """;
+
+    /// <summary>Socle initial, compatible avec les catalogues 0.1.0.</summary>
+    public const string Baseline = """
         CREATE TABLE IF NOT EXISTS spaces (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -212,4 +236,11 @@ internal static class CatalogSchema
         CREATE INDEX IF NOT EXISTS ix_faces_group ON faces (group_id);
         CREATE INDEX IF NOT EXISTS ix_exclusions_memory ON exclusions (memory_id);
         """;
+
+    /// <summary>Migrations ordonnées, chacune idempotente et rejouable.</summary>
+    public static readonly IReadOnlyList<CatalogMigration> Migrations = new CatalogMigration[]
+    {
+        new(1, "socle-0.1.0", Baseline),
+        new(2, "journal-des-migrations", CreateMigrationsTable),
+    };
 }
