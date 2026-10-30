@@ -45,6 +45,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <StackPanel Spacing="2">
                     <TextBlock Text="Souvenirs situés" Style="{StaticResource MemoSectionTextStyle}" />
@@ -77,6 +78,23 @@
                         Style="{StaticResource MemoSecondaryTextStyle}"
                         Text="Les coordonnées ne sont pas inventées à partir de l'historique du compte. Ajoutez un lieu depuis la fiche d'un souvenir." />
                 </StackPanel>
+
+                <Expander
+                    x:Name="EventPlacesExpander"
+                    Grid.Row="2"
+                    HorizontalAlignment="Stretch"
+                    IsExpanded="False"
+                    Visibility="Collapsed">
+                    <Expander.Header>
+                        <TextBlock
+                            Style="{StaticResource MemoSectionTextStyle}"
+                            Text="Lieux des événements proposés" />
+                    </Expander.Header>
+                    <StackPanel
+                        x:Name="EventPlaces"
+                        Margin="0,6,0,0"
+                        Spacing="4" />
+                </Expander>
             </Grid>
         </Grid>
     </Grid>

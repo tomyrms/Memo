@@ -15,10 +15,10 @@ public sealed partial class MapPage : Page
     {
         InitializeComponent();
         Map.PointSelected += OnPointSelected;
-        Loaded += (_, _) => Build();
+        Loaded += async (_, _) => await BuildAsync();
     }
 
-    private void Build()
+    private async Task BuildAsync()
     {
         _located = AppState.Current.Cards
             .Where(c => c.Latitude is not null && c.Longitude is not null)
@@ -42,6 +42,73 @@ public sealed partial class MapPage : Page
         Subtitle.Text = "Seuls les souvenirs avec un lieu explicite apparaissent. L'historique du compte n'est pas utilisé.";
         Empty.Visibility = _located.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         Places.Visibility = _located.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        try
+        {
+            await LoadEventPlacesAsync();
+        }
+        catch
+        {
+            // La carte existante reste utilisable même si les suggestions échouent.
+            EventPlacesExpander.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// Ajoute les lieux explicitement associés aux événements proposés.
+    /// Aucune coordonnée n'est déduite : seuls les libellés déjà portés par un
+    /// souvenir sont affichés. Les marqueurs de la carte restent inchangés.
+    /// </summary>
+    private async Task LoadEventPlacesAsync()
+    {
+        var suggestions = await EventSuggestionService.Current.BuildSuggestionsAsync();
+        var withPlaces = suggestions.Where(s => s.HasPlaces).ToList();
+        var events = withPlaces.Take(4).ToList();
+
+        EventPlaces.Children.Clear();
+        EventPlacesExpander.Visibility = events.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        EventPlacesExpander.IsExpanded = events.Count > 0;
+        if (events.Count == 0)
+        {
+            return;
+        }
+
+        EventPlaces.Children.Add(Widgets.Caption(
+            "Lieux explicitement associés aux souvenirs. Aucune position n'est déduite d'un historique."));
+
+        foreach (var suggestion in events)
+        {
+            var panel = new StackPanel { Spacing = 1 };
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Join(" · ", suggestion.Places),
+                Style = Widgets.Style("MemoBodyTextStyle"),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+            panel.Children.Add(new TextBlock
+            {
+                Text = $"{suggestion.PeriodLabel} · {suggestion.MemoryCount} souvenir(s)",
+                Style = Widgets.Style("MemoCaptionTextStyle"),
+            });
+
+            var button = new Button
+            {
+                Content = panel,
+                Style = Widgets.Style("MemoQuietButtonStyle"),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Left,
+                Padding = new Thickness(4, 6, 4, 6),
+            };
+            button.Click += (_, _) => App.MainWindow?.ShowStory(suggestion.Memories, 0);
+            EventPlaces.Children.Add(button);
+        }
+
+        if (withPlaces.Count > events.Count)
+        {
+            EventPlaces.Children.Add(Widgets.Caption(
+                $"… et {withPlaces.Count - events.Count} autre(s) événement(s) avec un lieu. " +
+                "La liste complète est sur l’écran Événements."));
+        }
     }
 
     private void OnPointSelected(object? sender, MapPoint point)
