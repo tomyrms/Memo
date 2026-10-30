@@ -46,6 +46,9 @@ jobs:
       - name: Tests Memo.Media
         run: dotnet test tests/Memo.Media.Tests/Memo.Media.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
 
+      - name: Tests d’intégration de l’import
+        run: dotnet test tests/Memo.Integration.Tests/Memo.Integration.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
       - name: Publier Memo en win-x64 auto-contenu
         run: dotnet publish src/Memo.App/Memo.App.csproj -c Release -r win-x64 --self-contained -p:PublishReadyToRun=false -o artifacts/publish
 

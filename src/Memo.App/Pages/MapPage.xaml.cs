@@ -14,6 +14,7 @@ public sealed partial class MapPage : Page
     public MapPage()
     {
         InitializeComponent();
+        Map.PointSelected += OnPointSelected;
         Loaded += (_, _) => Build();
     }
 
@@ -28,7 +29,6 @@ public sealed partial class MapPage : Page
             .Select(c => new MapPoint(c.Latitude!.Value, c.Longitude!.Value, c.Id, c.LocationLabel ?? "Lieu"))
             .ToList();
         Map.SetPoints(points);
-        Map.PointSelected += OnPointSelected;
 
         Places.ItemsSource = _located.Select(c => new PlaceItem(
             c.LocationLabel ?? "Lieu",
@@ -88,3 +88,4 @@ public sealed partial class MapPage : Page
 
     public sealed record PlaceItem(string Label, string Date, MemoryCard Card);
 }
+

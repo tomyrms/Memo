@@ -183,8 +183,7 @@ public sealed class MediaStage : UserControl
         {
             if (_frame is null || _frame.Width != _width || _frame.Height != _height)
             {
-                // L'ancienne image n'est pas libérée immédiatement : un rendu peut
-                // encore la référencer sur le thread UI.
+                _frame?.Dispose();
                 _frame = new SKBitmap(new SKImageInfo(_width, _height, SKColorType.Bgra8888, SKAlphaType.Opaque));
             }
         }
@@ -344,6 +343,7 @@ public sealed class MediaStage : UserControl
         }
     }
 }
+
 
 
 
