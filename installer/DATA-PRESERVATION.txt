@@ -1,0 +1,24 @@
+﻿VOS DONNÉES NE SONT PAS SUPPRIMÉES
+
+Memo est installé dans :
+    %LOCALAPPDATA%\Programs\Memo
+
+La désinstallation retire le programme, ses fichiers et ses raccourcis. Elle ne
+supprime pas les bibliothèques de souvenirs, les sauvegardes ni les réglages que
+vous avez créés en dehors de ce dossier.
+
+Une bibliothèque Memo contient notamment :
+    library.json
+    catalog.db
+    media\
+    derived\
+    imports\
+
+Conservez ces dossiers avant de changer de PC ou de réinstaller Windows. Pour
+désinstaller Memo : Paramètres Windows > Applications > Applications installées
+> Memo > Désinstaller. Vous pouvez aussi utiliser le raccourci de désinstallation
+créé dans le menu Démarrer.
+
+Les fonctions d'import et de création de bibliothèque sont encore en cours de
+validation dans cette version 0.1.0. L'installateur ne crée aucune bibliothèque
+et ne touche à aucun dossier de données existant.
