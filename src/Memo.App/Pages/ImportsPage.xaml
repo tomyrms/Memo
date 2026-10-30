@@ -169,7 +169,16 @@
                 <ListView
                     x:Name="Diagnostics"
                     MaxHeight="220"
-                    SelectionMode="None" />
+                    SelectionMode="None">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Padding="0,4" Spacing="1">
+                                <TextBlock Text="{Binding Title}" Style="{StaticResource MemoBodyTextStyle}" />
+                                <TextBlock Text="{Binding Detail}" Style="{StaticResource MemoCaptionTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
             </StackPanel>
 
             <StackPanel Spacing="8">

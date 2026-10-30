@@ -72,7 +72,7 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <Grid Grid.Column="1" RowSpacing="12">
+            <Grid x:Name="AlbumContent" Grid.Column="1" RowSpacing="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -92,6 +92,7 @@
                             Style="{StaticResource MemoSecondaryTextStyle}" />
                     </StackPanel>
                     <StackPanel
+                        x:Name="AlbumActions"
                         Grid.Column="1"
                         Orientation="Horizontal"
                         Spacing="4">
@@ -140,8 +141,28 @@
                         HorizontalAlignment="Left"
                         Style="{StaticResource MemoSecondaryButtonStyle}" />
                 </StackPanel>
+
+                <StackPanel
+                    x:Name="NoAlbums"
+                    Grid.Row="1"
+                    MaxWidth="460"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Top"
+                    Spacing="8"
+                    Visibility="Collapsed">
+                    <TextBlock Text="Aucun album pour l’instant" Style="{StaticResource MemoSubtitleTextStyle}" />
+                    <TextBlock
+                        Style="{StaticResource MemoSecondaryTextStyle}"
+                        Text="Un album est une collection locale : les fichiers sources ne sont ni déplacés ni renommés. Créez-en un, puis ajoutez des souvenirs depuis la bibliothèque." />
+                    <Button
+                        Click="OnCreate"
+                        Content="Créer un album"
+                        HorizontalAlignment="Left"
+                        Style="{StaticResource MemoPrimaryButtonStyle}" />
+                </StackPanel>
             </Grid>
         </Grid>
     </Grid>
 </Page>
+
 

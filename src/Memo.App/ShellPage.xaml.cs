@@ -9,21 +9,50 @@ public sealed partial class ShellPage : UserControl
 {
     private string _current = "home";
 
+    public string? StartPage { get; set; }
+
+    public event EventHandler? Ready;
+
     public ShellPage()
     {
         InitializeComponent();
         Loaded += OnLoaded;
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    private async void OnLoaded(object sender, RoutedEventArgs e)
     {
-        AppState.Current.LoadDemo();
+        var last = AppState.ReadLastLibrary();
+        if (!string.IsNullOrEmpty(last) && Directory.Exists(last))
+        {
+            try
+            {
+                await AppState.Current.OpenLibraryAsync(last);
+            }
+            catch
+            {
+                AppState.Current.LoadDemo();
+            }
+        }
+        else
+        {
+            AppState.Current.LoadDemo();
+        }
+
+        AppState.Current.LibraryChanged += (_, _) => UpdateChrome();
+        UpdateChrome();
+        var target = string.IsNullOrWhiteSpace(StartPage) ? "home" : StartPage;
+        Select(target);
+        Navigate(target);
+        Ready?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void UpdateChrome()
+    {
         LibraryLabel.Text = AppState.Current.LibraryName;
         StorageLabel.Text = $"{AppState.Current.Cards.Count} souvenirs";
         DemoBar.IsOpen = AppState.Current.IsDemo;
         DemoBadge.Visibility = AppState.Current.IsDemo ? Visibility.Visible : Visibility.Collapsed;
-        Nav.SelectedItem = Nav.MenuItems[0];
-        Navigate("home");
+        App.MainWindow?.ApplyTheme(AppState.Current.Settings.Theme);
     }
 
     private void OnNavSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -91,3 +120,7 @@ public sealed partial class ShellPage : UserControl
         OpenImports();
     }
 }
+
+
+
+

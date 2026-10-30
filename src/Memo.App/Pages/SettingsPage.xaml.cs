@@ -20,10 +20,17 @@ public sealed partial class SettingsPage : Page
     {
         _loading = true;
         var settings = AppState.Current.Settings;
+        TimeZoneBox.Items.Clear();
 
+        var seenZones = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var zone in TimeZoneInfo.GetSystemTimeZones().OrderBy(z => z.DisplayName, StringComparer.CurrentCulture))
         {
-            TimeZoneBox.Items.Add(new ComboBoxItem { Content = zone.DisplayName, Tag = zone.Id });
+            var iana = TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var converted) ? converted : zone.Id;
+            if (!seenZones.Add(iana))
+            {
+                continue;
+            }
+            TimeZoneBox.Items.Add(new ComboBoxItem { Content = zone.DisplayName, Tag = iana });
         }
         SelectByTag(TimeZoneBox, settings.TimeZoneId);
         SelectByTag(ThemeBox, settings.Theme);
@@ -57,7 +64,7 @@ public sealed partial class SettingsPage : Page
     {
         foreach (var item in box.Items.OfType<ComboBoxItem>())
         {
-            if ((item.Tag as string) == tag)
+            if (string.Equals(item.Tag as string, tag, StringComparison.OrdinalIgnoreCase))
             {
                 box.SelectedItem = item;
                 return;
@@ -69,50 +76,49 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private void OnThemeChanged(object sender, SelectionChangedEventArgs e)
+    private async void OnThemeChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading)
         {
             return;
         }
         var tag = (ThemeBox.SelectedItem as ComboBoxItem)?.Tag as string ?? "System";
-        AppState.Current.Settings = AppState.Current.Settings with { Theme = tag };
         App.MainWindow?.ApplyTheme(tag);
-        Show("Thème appliqué", "Le choix est conservé pour cette session.", InfoBarSeverity.Success);
+        await SaveAsync(AppState.Current.Settings with { Theme = tag });
     }
 
-    private void OnMotionChanged(object sender, RoutedEventArgs e)
+    private async void OnMotionChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with { ReduceMotion = MotionSwitch.IsOn };
+        await SaveAsync(AppState.Current.Settings with { ReduceMotion = MotionSwitch.IsOn });
     }
 
-    private void OnPhotoDurationChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    private async void OnPhotoDurationChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
     {
         if (_loading || double.IsNaN(args.NewValue))
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with { PhotoDurationSeconds = (int)args.NewValue };
+        await SaveAsync(AppState.Current.Settings with { PhotoDurationSeconds = (int)args.NewValue });
     }
 
-    private void OnPlaybackChanged(object sender, RoutedEventArgs e)
+    private async void OnPlaybackChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with
+        await SaveAsync(AppState.Current.Settings with
         {
             AutoplayVideos = AutoplaySwitch.IsOn,
             PlayAudio = AudioSwitch.IsOn
-        };
+        });
     }
 
-    private void OnTimeZoneChanged(object sender, SelectionChangedEventArgs e)
+    private async void OnTimeZoneChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_loading)
         {
@@ -120,54 +126,73 @@ public sealed partial class SettingsPage : Page
         }
         if (TimeZoneBox.SelectedItem is ComboBoxItem item && item.Tag is string id)
         {
-            AppState.Current.Settings = AppState.Current.Settings with { TimeZoneId = id };
-            Show("Fuseau de classement modifié",
-                "Les jours seront recalculés à partir des instants conservés. Aucune date d'origine n'est modifiée.",
-                InfoBarSeverity.Informational);
+            try
+            {
+                await AppState.Current.SetTimeZoneAsync(id);
+                Show("Fuseau de classement modifié",
+                    "Les jours ont été recalculés à partir des instants conservés. Aucune date d'origine n'est modifiée.",
+                    InfoBarSeverity.Informational);
+            }
+            catch (Exception ex)
+            {
+                Show("Changement de fuseau impossible", ex.Message, InfoBarSeverity.Error);
+            }
         }
     }
 
-    private void OnRemindersChanged(object sender, RoutedEventArgs e)
+    private async void OnRemindersChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with { RemindersEnabled = RemindersSwitch.IsOn };
+        await SaveAsync(AppState.Current.Settings with { RemindersEnabled = RemindersSwitch.IsOn });
     }
 
-    private void OnReminderTimeChanged(TimePicker sender, TimePickerSelectedValueChangedEventArgs args)
+    private async void OnReminderTimeChanged(TimePicker sender, TimePickerSelectedValueChangedEventArgs args)
     {
         if (_loading)
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with
+        await SaveAsync(AppState.Current.Settings with
         {
             ReminderTime = (args.NewTime ?? TimeSpan.FromHours(9)).ToString(@"hh\:mm")
-        };
+        });
     }
 
-    private void OnDiscreetChanged(object sender, RoutedEventArgs e)
+    private async void OnDiscreetChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with { DiscreetNotifications = DiscreetSwitch.IsOn };
+        await SaveAsync(AppState.Current.Settings with { DiscreetNotifications = DiscreetSwitch.IsOn });
     }
 
-    private void OnAnalysisChanged(object sender, RoutedEventArgs e)
+    private async void OnAnalysisChanged(object sender, RoutedEventArgs e)
     {
         if (_loading)
         {
             return;
         }
-        AppState.Current.Settings = AppState.Current.Settings with
+        await SaveAsync(AppState.Current.Settings with
         {
             OcrEnabled = OcrSwitch.IsOn,
             FacesEnabled = FacesSwitch.IsOn
-        };
+        });
+    }
+
+    private async Task SaveAsync(AppSettings settings)
+    {
+        try
+        {
+            await AppState.Current.SaveSettingsAsync(settings);
+        }
+        catch (Exception ex)
+        {
+            Show("Réglage non enregistré", ex.Message, InfoBarSeverity.Warning);
+        }
     }
 
     private async void OnOpenLibrary(object sender, RoutedEventArgs e)
@@ -180,41 +205,137 @@ public sealed partial class SettingsPage : Page
         {
             return;
         }
-        Show("Ouverture non disponible",
-            "L'ouverture d'une bibliothèque existante sera reliée au catalogue après l'intégration du noyau. Aucun fichier n'a été modifié.",
-            InfoBarSeverity.Warning);
+        try
+        {
+            await AppState.Current.OpenLibraryAsync(folder.Path);
+            Initialize();
+            Show("Bibliothèque ouverte", $"{AppState.Current.Cards.Count} souvenir(s) chargés depuis {folder.Path}.", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Ouverture impossible", ex.Message, InfoBarSeverity.Error);
+        }
     }
 
     private async void OnCreateLibrary(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        picker.FileTypeFilter.Add("*");
-        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
-        var folder = await picker.PickSingleFolderAsync();
-        if (folder is null)
+        var nameBox = new TextBox { PlaceholderText = "Nom de la bibliothèque", Text = "Ma bibliothèque", MaxLength = 80 };
+        var dialog = new ContentDialog
+        {
+            Title = "Créer une bibliothèque",
+            Content = nameBox,
+            PrimaryButtonText = "Choisir un dossier",
+            CloseButtonText = "Annuler",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(nameBox.Text))
         {
             return;
         }
-        Show("Création non disponible",
-            "La création de bibliothèque sera reliée au catalogue après l'intégration du noyau. Aucun fichier n'a été modifié.",
-            InfoBarSeverity.Warning);
-    }
 
-    private async void OnBackup(object sender, RoutedEventArgs e) => await ExplainBackupAsync("Sauvegarde");
-    private async void OnRestore(object sender, RoutedEventArgs e) => await ExplainBackupAsync("Restauration");
-
-    private async Task ExplainBackupAsync(string action)
-    {
-        var dialog = new ContentDialog
+        var picker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+        picker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var parent = await picker.PickSingleFolderAsync();
+        if (parent is null)
         {
-            Title = action,
-            Content = "Cette action nécessite une bibliothèque ouverte. Elle sera disponible dès qu'un catalogue local est chargé ; aucun export personnel n'est inclus dans l'application.",
-            CloseButtonText = "Fermer",
-            XamlRoot = XamlRoot
-        };
-        await dialog.ShowAsync();
+            return;
+        }
+
+        var name = nameBox.Text.Trim();
+        var safe = string.Join('-', name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries)).Trim();
+        if (string.IsNullOrWhiteSpace(safe))
+        {
+            Show("Création impossible", "Le nom choisi ne permet pas de créer un dossier.", InfoBarSeverity.Error);
+            return;
+        }
+        var root = Path.Combine(parent.Path, safe);
+        if (Directory.Exists(root) && Directory.EnumerateFileSystemEntries(root).Any())
+        {
+            Show("Dossier déjà utilisé", $"Le dossier {root} n'est pas vide. Choisissez un autre emplacement.", InfoBarSeverity.Error);
+            return;
+        }
+
+        try
+        {
+            await AppState.Current.CreateLibraryAsync(root, name);
+            Initialize();
+            Show("Bibliothèque créée", $"Les fichiers seront stockés dans {root}.", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Création impossible", ex.Message, InfoBarSeverity.Error);
+        }
     }
 
+    private async void OnBackup(object sender, RoutedEventArgs e)
+    {
+        if (AppState.Current.IsDemo)
+        {
+            Show("Aucune bibliothèque", "Créez ou ouvrez une bibliothèque avant de la sauvegarder.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        var picker = new FileSavePicker
+        {
+            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = $"memo-sauvegarde-{DateTime.Now:yyyyMMdd}"
+        };
+        picker.FileTypeChoices.Add("Archive ZIP", new List<string> { ".zip" });
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Show("Sauvegarde en cours", "Le catalogue et les médias sources sont copiés.", InfoBarSeverity.Informational);
+            var path = await AppState.Current.BackupAsync(file.Path);
+            Show("Sauvegarde terminée", $"Archive créée : {path}", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Sauvegarde impossible", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async void OnRestore(object sender, RoutedEventArgs e)
+    {
+        var open = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+        open.FileTypeFilter.Add(".zip");
+        WinRT.Interop.InitializeWithWindow.Initialize(open, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var file = await open.PickSingleFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        var folderPicker = new FolderPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+        folderPicker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(folderPicker, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var parent = await folderPicker.PickSingleFolderAsync();
+        if (parent is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Show("Restauration en cours", "La sauvegarde est vérifiée puis extraite dans un dossier vide.", InfoBarSeverity.Informational);
+            var target = Path.Combine(parent.Path, $"Memo-restaure-{DateTime.Now:yyyyMMdd-HHmm}");
+            await AppState.Current.RestoreAsync(file.Path, target);
+            await AppState.Current.OpenLibraryAsync(target);
+            Initialize();
+            Show("Restauration terminée", $"{AppState.Current.Cards.Count} souvenir(s) restaurés dans {target}.", InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Restauration impossible", ex.Message, InfoBarSeverity.Error);
+        }
+    }
     private async void OnOpenLicenses(object sender, RoutedEventArgs e)
     {
         var text = "Memo 0.1.0\n\n" +
@@ -243,3 +364,8 @@ public sealed partial class SettingsPage : Page
         Notice.IsOpen = true;
     }
 }
+
+
+
+
+

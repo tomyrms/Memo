@@ -162,10 +162,12 @@ public sealed partial class RecapsPage : Page
         if (first is not null && AppState.Current.ThumbnailFor(first.Id) is { } coverPath)
         {
             CoverImage.Source = new BitmapImage(new Uri(coverPath));
+            CoverEmpty.Visibility = Visibility.Collapsed;
         }
         else
         {
             CoverImage.Source = null;
+            CoverEmpty.Visibility = Visibility.Visible;
         }
         CoverBadge.Visibility = _selection.Count > 1 ? Visibility.Visible : Visibility.Collapsed;
         CoverCount.Text = $"+{_selection.Count - 1}";
@@ -229,22 +231,31 @@ public sealed partial class RecapsPage : Page
         }
     }
 
-    private void OnSave(object sender, RoutedEventArgs e)
+    private async void OnSave(object sender, RoutedEventArgs e)
     {
         if (_period is null || _selection.Count == 0)
         {
             return;
         }
         var name = $"{_period.Value.Title} · récapitulatif";
-        var id = AppState.Current.Albums.Count == 0 ? 1 : AppState.Current.Albums.Max(a => a.Id) + 1;
-        AppState.Current.Albums.Add(new CollectionInfo(
-            id, name, CollectionKind.Recap, DateTimeOffset.Now, _selection.Count,
-            AppState.Current.ThumbnailFor(_selection[0].Id), _selection[0].LocalDate, _selection[^1].LocalDate));
+        if (AppState.Current.Library is not null)
+        {
+            await AppState.Current.SaveRecapAsync(name, _selection.Select(c => c.Id).ToList());
+        }
+        else
+        {
+            var id = AppState.Current.Albums.Count == 0 ? 1 : AppState.Current.Albums.Max(a => a.Id) + 1;
+            AppState.Current.Albums.Add(new CollectionInfo(
+                id, name, CollectionKind.Recap, DateTimeOffset.Now, _selection.Count,
+                AppState.Current.ThumbnailFor(_selection[0].Id), _selection[0].LocalDate, _selection[^1].LocalDate));
+        }
         Notice.Title = "Récapitulatif enregistré";
         Notice.Message = $"« {name} » est conservé dans Albums et Récapitulatifs. Il reste modifiable.";
         Notice.Severity = InfoBarSeverity.Success;
         Notice.IsOpen = true;
     }
 }
+
+
 
 

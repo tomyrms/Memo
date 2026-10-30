@@ -39,13 +39,27 @@ public sealed partial class MainWindow : Window
             .FirstOrDefault(a => a.StartsWith("--page=", StringComparison.OrdinalIgnoreCase));
         if (pageArg is not null)
         {
-            var tag = pageArg["--page=".Length..];
-            Shell.Loaded += (_, _) => Shell.Navigate(tag);
+            Shell.StartPage = pageArg["--page=".Length..];
         }
 
-        if (Environment.GetCommandLineArgs().Any(a => a.Equals("--story", StringComparison.OrdinalIgnoreCase)))
+        if (Environment.GetCommandLineArgs().Any(a => a.Equals("--story-photo", StringComparison.OrdinalIgnoreCase)))
         {
-            Shell.Loaded += (_, _) =>
+            Shell.Ready += (_, _) =>
+            {
+                var photos = Services.AppState.Current.Cards
+                    .Where(c => c.Kind == MediaKind.Photo && c.OverlayCount > 0)
+                    .Take(4)
+                    .ToList();
+                if (photos.Count == 0)
+                {
+                    photos = Services.AppState.Current.Cards.Where(c => c.Kind == MediaKind.Photo).Take(4).ToList();
+                }
+                ShowStory(photos, 0);
+            };
+        }
+        else if (Environment.GetCommandLineArgs().Any(a => a.Equals("--story", StringComparison.OrdinalIgnoreCase)))
+        {
+            Shell.Ready += (_, _) =>
             {
                 var items = Services.AppState.Current.Cards
                     .Where(c => c.Kind == MediaKind.Video || c.OverlayCount > 0)
@@ -119,3 +133,6 @@ public sealed partial class MainWindow : Window
         Story.Closed -= OnStoryClosed;
     }
 }
+
+
+

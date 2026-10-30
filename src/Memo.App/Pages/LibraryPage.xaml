@@ -50,7 +50,7 @@
             </Grid.ColumnDefinitions>
             <AutoSuggestBox
                 x:Name="SearchBox"
-                MaxWidth="360"
+                Width="300"
                 HorizontalAlignment="Left"
                 PlaceholderText="Rechercher un lieu, une date, un texte OCR"
                 QueryIcon="Find"
@@ -171,4 +171,5 @@
         </Border>
     </Grid>
 </Page>
+
 

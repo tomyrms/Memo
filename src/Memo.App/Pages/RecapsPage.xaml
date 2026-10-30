@@ -86,7 +86,16 @@
                             x:Name="Cover"
                             Background="{ThemeResource MemoPhotoPlaceholderBrush}"
                             CornerRadius="4">
-                            <Image x:Name="CoverImage" Stretch="UniformToFill" />
+                            <Grid>
+                                <Image x:Name="CoverImage" Stretch="UniformToFill" />
+                                <TextBlock
+                                    x:Name="CoverEmpty"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource MemoCaptionTextStyle}"
+                                    Text="Aperçu à générer"
+                                    Visibility="Collapsed" />
+                            </Grid>
                         </Border>
                         <Border
                             x:Name="CoverBadge"

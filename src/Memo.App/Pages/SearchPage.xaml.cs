@@ -21,7 +21,7 @@ public sealed partial class SearchPage : Page
     public SearchPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => { _ready = true; Run(string.Empty); };
+        Loaded += async (_, _) => { _ready = true; await RunAsync(string.Empty); };
     }
 
     private void OnModeChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
@@ -40,25 +40,32 @@ public sealed partial class SearchPage : Page
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
         {
-            Run(sender.Text);
+            _ = RunAsync(sender.Text);
         }
     }
 
-    private void Run(string query)
+    private async Task RunAsync(string query)
     {
         var q = query.Trim();
-        var cards = AppState.Current.Cards.AsEnumerable();
-        if (q.Length > 0)
+        if (AppState.Current.Library is not null)
         {
-            cards = cards.Where(c =>
-                (c.LocationLabel?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                c.ExternalKey.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                (DemoOcr.TryGetValue(c.Id, out var ocr) && ocr.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
-                (c.LocalDate?.ToString("d MMMM yyyy", AppState.French).Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            _results = (await AppState.Current.SearchAsync(q)).ToList();
         }
-
-        _results = cards.OrderByDescending(c => c.LocalDate).ToList();
+        else
+        {
+            var cards = AppState.Current.Cards.AsEnumerable();
+            if (q.Length > 0)
+            {
+                cards = cards.Where(c =>
+                    (c.LocationLabel?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    c.ExternalKey.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                    (DemoOcr.TryGetValue(c.Id, out var ocr) && ocr.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
+                    (c.LocalDate?.ToString("d MMMM yyyy", AppState.French).Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            _results = cards.OrderByDescending(c => c.LocalDate).ToList();
+        }
         Results.ItemsSource = _results;
+        ResultCount.Text = _results.Count == 1 ? "1 souvenir" : $"{_results.Count} souvenirs";
         EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = q.Length == 0
             ? "Saisissez un mot pour chercher dans les lieux, les dates et les textes reconnus."
@@ -112,4 +119,5 @@ public sealed partial class SearchPage : Page
         VisualStatus.Text = "Le calcul local sera disponible après activation dans Réglages. Aucun résultat n'est affiché tant que l'analyse n'a pas eu lieu.";
     }
 }
+
 

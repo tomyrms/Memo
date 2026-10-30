@@ -52,6 +52,7 @@ public sealed partial class MemoryTile : UserControl
 
         var isOverlayOnly = card.Status == MemoryStatus.OverlayOnly;
         MissingLayer.Visibility = isOverlayOnly ? Visibility.Visible : Visibility.Collapsed;
+        NoPreview.Visibility = Visibility.Collapsed;
 
         if (card.Kind == MediaKind.Video)
         {
@@ -76,6 +77,9 @@ public sealed partial class MemoryTile : UserControl
         {
             Thumb.Source = null;
             Loading.Visibility = Visibility.Collapsed;
+            NoPreviewIcon.Glyph = card.Kind == MediaKind.Video ? "\uE768" : "\uE91B";
+            NoPreviewText.Text = card.Kind == MediaKind.Video ? "Vidéo · aperçu à générer" : "Photo · aperçu à générer";
+            NoPreview.Visibility = Visibility.Visible;
             return;
         }
 
@@ -115,3 +119,4 @@ public sealed partial class MemoryTile : UserControl
             : $"{span.Minutes}:{span.Seconds:00}";
     }
 }
+

@@ -35,6 +35,23 @@
             </StackPanel>
         </Border>
 
+        <StackPanel
+            x:Name="NoPreview"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Spacing="8"
+            Visibility="Collapsed">
+            <FontIcon
+                x:Name="NoPreviewIcon"
+                FontSize="22"
+                Foreground="{ThemeResource MemoTextSecondaryBrush}"
+                Glyph="&#xE768;" />
+            <TextBlock
+                x:Name="NoPreviewText"
+                Style="{StaticResource MemoCaptionTextStyle}"
+                Text="Aperçu indisponible" />
+        </StackPanel>
+
         <Border
             x:Name="TypeBadge"
             Margin="8"

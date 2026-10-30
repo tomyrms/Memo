@@ -13,33 +13,43 @@ public sealed partial class AlbumsPage : Page
     public AlbumsPage()
     {
         InitializeComponent();
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             AlbumList.ItemsSource = AppState.Current.Albums;
             if (AlbumList.SelectedIndex < 0 && AppState.Current.Albums.Count > 0)
             {
                 AlbumList.SelectedIndex = 0;
             }
-            ShowAlbum(AlbumList.SelectedItem as CollectionInfo);
+            await ShowAlbumAsync(AlbumList.SelectedItem as CollectionInfo);
         };
     }
 
-    private void OnAlbumSelected(object sender, SelectionChangedEventArgs e)
-        => ShowAlbum(AlbumList.SelectedItem as CollectionInfo);
+    private async void OnAlbumSelected(object sender, SelectionChangedEventArgs e)
+        => await ShowAlbumAsync(AlbumList.SelectedItem as CollectionInfo);
 
-    private void ShowAlbum(CollectionInfo? album)
+    private async Task ShowAlbumAsync(CollectionInfo? album)
     {
         if (album is null)
         {
-            AlbumTitle.Text = "Aucun album sélectionné";
+            AlbumTitle.Text = AppState.Current.Albums.Count == 0 ? string.Empty : "Aucun album sélectionné";
             AlbumMeta.Text = string.Empty;
             Grid.ItemsSource = null;
             Empty.Visibility = Visibility.Collapsed;
+            NoAlbums.Visibility = AppState.Current.Albums.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            AlbumActions.Visibility = Visibility.Collapsed;
+            var empty = AppState.Current.Albums.Count == 0;
+            AlbumList.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(AlbumContent, empty ? 0 : 1);
+            Microsoft.UI.Xaml.Controls.Grid.SetColumnSpan(AlbumContent, empty ? 2 : 1);
             return;
         }
 
-        var ids = DemoData.AlbumMembers(album.Id);
-        _items = AppState.Current.Cards.Where(c => ids.Contains(c.Id)).ToList();
+        NoAlbums.Visibility = Visibility.Collapsed;
+        AlbumActions.Visibility = Visibility.Visible;
+        AlbumList.Visibility = Visibility.Visible;
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(AlbumContent, 1);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumnSpan(AlbumContent, 1);
+        _items = (await AppState.Current.GetAlbumItemsAsync(album.Id)).ToList();
         AlbumTitle.Text = album.Name;
         AlbumMeta.Text = $"{_items.Count} souvenir(s)" + (album.FirstDate is { } first ? $" · depuis le {first:d MMMM yyyy}" : " · sans date");
         Grid.ItemsSource = _items;
@@ -70,9 +80,9 @@ public sealed partial class AlbumsPage : Page
             return;
         }
         var id = AppState.Current.Albums.Count == 0 ? 1 : AppState.Current.Albums.Max(a => a.Id) + 1;
-        AppState.Current.Albums.Add(new CollectionInfo(id, name.Trim(), CollectionKind.Album, DateTimeOffset.Now, 0, null, null, null));
-        AlbumList.SelectedItem = AppState.Current.Albums[^1];
-        ShowAlbum(AlbumList.SelectedItem as CollectionInfo);
+        await AppState.Current.CreateAlbumAsync(name.Trim());
+        AlbumList.SelectedItem = AppState.Current.Albums.Count > 0 ? AppState.Current.Albums[^1] : null;
+        await ShowAlbumAsync(AlbumList.SelectedItem as CollectionInfo);
     }
 
     private async void OnRename(object sender, RoutedEventArgs e)
@@ -86,13 +96,8 @@ public sealed partial class AlbumsPage : Page
         {
             return;
         }
-        var index = AppState.Current.Albums.IndexOf(album);
-        if (index >= 0)
-        {
-            AppState.Current.Albums[index] = album with { Name = name.Trim() };
-            AlbumList.SelectedIndex = index;
-            ShowAlbum(AppState.Current.Albums[index]);
-        }
+        await AppState.Current.RenameAlbumAsync(album.Id, name.Trim());
+        await ShowAlbumAsync(AlbumList.SelectedItem as CollectionInfo);
     }
 
     private async void OnDelete(object sender, RoutedEventArgs e)
@@ -114,9 +119,9 @@ public sealed partial class AlbumsPage : Page
         {
             return;
         }
-        AppState.Current.Albums.Remove(album);
+        await AppState.Current.DeleteAlbumAsync(album.Id);
         AlbumList.SelectedIndex = AppState.Current.Albums.Count > 0 ? 0 : -1;
-        ShowAlbum(AlbumList.SelectedItem as CollectionInfo);
+        await ShowAlbumAsync(AlbumList.SelectedItem as CollectionInfo);
     }
 
     private async Task<string?> AskNameAsync(string title, string initial, string primary)
@@ -137,3 +142,4 @@ public sealed partial class AlbumsPage : Page
 
     private void OnGoLibrary(object sender, RoutedEventArgs e) => App.MainWindow?.Navigate("library");
 }
+

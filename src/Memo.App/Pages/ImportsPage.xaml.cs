@@ -9,20 +9,36 @@ namespace Memo.App.Pages;
 public sealed partial class ImportsPage : Page
 {
     private readonly List<string> _staged = new();
+    private CancellationTokenSource? _cts;
 
     public ImportsPage()
     {
         InitializeComponent();
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
-            if (SpaceBox.Items.Count == 0)
-            {
-                SpaceBox.Items.Add(new ComboBoxItem { Content = "Démonstration", Tag = 1L, IsSelected = true });
-            }
-            SpaceBox.SelectedIndex = 0;
+            await RefreshSpacesAsync();
             UpdateSelection();
-            UpdateHistory();
+            await UpdateHistoryAsync();
         };
+    }
+
+    private async Task RefreshSpacesAsync()
+    {
+        SpaceBox.Items.Clear();
+        if (AppState.Current.Library is null)
+        {
+            SpaceBox.Items.Add(new ComboBoxItem { Content = "Aucune bibliothèque ouverte", Tag = 0L, IsSelected = true });
+            ImportButton.IsEnabled = false;
+            SelectionPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        foreach (var space in AppState.Current.Spaces)
+        {
+            SpaceBox.Items.Add(new ComboBoxItem { Content = space.Name, Tag = space.Id });
+        }
+        SpaceBox.SelectedIndex = SpaceBox.Items.Count > 0 ? 0 : -1;
+        ImportButton.IsEnabled = true;
     }
 
     private async void OnPickArchives(object sender, RoutedEventArgs e)
@@ -84,30 +100,126 @@ public sealed partial class ImportsPage : Page
         UpdateSelection();
     }
 
-    private void OnImport(object sender, RoutedEventArgs e)
+    private async void OnImport(object sender, RoutedEventArgs e)
     {
         if (_staged.Count == 0)
         {
             return;
         }
 
-        Notice.Title = "Bibliothèque non ouverte";
-        Notice.Message = "L'import écrit dans une bibliothèque locale. Créez-la ou ouvrez-la depuis Réglages avant de lancer l'import.";
-        Notice.Severity = InfoBarSeverity.Warning;
+        if (AppState.Current.Library is null)
+        {
+            Notice.Title = "Bibliothèque non ouverte";
+            Notice.Message = "Créez ou ouvrez une bibliothèque depuis Réglages avant de lancer l'import.";
+            Notice.Severity = InfoBarSeverity.Warning;
+            Notice.IsOpen = true;
+            return;
+        }
+
+        var spaceId = (SpaceBox.SelectedItem as ComboBoxItem)?.Tag as long? ?? AppState.Current.CurrentSpaceId;
+        _cts = new CancellationTokenSource();
+        ImportButton.IsEnabled = false;
+        ProgressPanel.Visibility = Visibility.Visible;
+        ResultPanel.Visibility = Visibility.Collapsed;
+        ProgressBar.IsIndeterminate = true;
+        ProgressTitle.Text = "Inventaire des archives";
+        ProgressText.Text = "Lecture de l'archive en cours…";
+
+        var progress = new Progress<ImportProgress>(UpdateProgress);
+        try
+        {
+            var result = await AppState.Current.ImportAsync(spaceId, _staged.ToList(), progress, _cts.Token);
+            ShowResult(result);
+            _staged.Clear();
+            UpdateSelection();
+            await UpdateHistoryAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            Notice.Title = "Import annulé";
+            Notice.Message = "Les éléments déjà validés restent disponibles ; relancer l'import ne créera pas de doublon.";
+            Notice.Severity = InfoBarSeverity.Informational;
+            Notice.IsOpen = true;
+        }
+        catch (Exception ex)
+        {
+            Notice.Title = "Import interrompu";
+            Notice.Message = ex.Message;
+            Notice.Severity = InfoBarSeverity.Error;
+            Notice.IsOpen = true;
+        }
+        finally
+        {
+            ImportButton.IsEnabled = true;
+            ProgressPanel.Visibility = Visibility.Collapsed;
+            _cts?.Dispose();
+            _cts = null;
+        }
+    }
+
+    private void UpdateProgress(ImportProgress progress)
+    {
+        ProgressTitle.Text = progress.Phase switch
+        {
+            ImportPhase.Scanning => "Inventaire des archives",
+            ImportPhase.Reading => "Lecture des fichiers",
+            ImportPhase.Storing => "Copie des médias",
+            ImportPhase.Associating => "Association des calques",
+            ImportPhase.Analyzing => "Préparation des miniatures",
+            ImportPhase.Done => "Import terminé",
+            ImportPhase.Failed => "Import interrompu",
+            ImportPhase.Cancelled => "Import annulé",
+            _ => "Import en cours"
+        };
+        ProgressBar.IsIndeterminate = progress.FilesTotal <= 0;
+        if (progress.FilesTotal > 0)
+        {
+            ProgressBar.Maximum = progress.FilesTotal;
+            ProgressBar.Value = Math.Min(progress.FilesProcessed, progress.FilesTotal);
+        }
+        ProgressText.Text = $"{progress.FilesProcessed} / {progress.FilesTotal} fichiers · {progress.Message}";
+    }
+
+    private void ShowResult(ImportResult result)
+    {
+        ResultPanel.Visibility = Visibility.Visible;
+        StatMemories.Text = result.Counters.MemoriesCreated.ToString();
+        StatMedia.Text = result.Counters.MediaImported.ToString();
+        StatOverlays.Text = result.Counters.OverlaysImported.ToString();
+        var missing = AppState.Current.Cards.Count(c => c.Status == MemoryStatus.OverlayOnly);
+        StatMissing.Text = missing.ToString();
+        ResultNote.Text = $"{result.Counters.MemoriesUpdated} souvenir(s) mis à jour · {result.Counters.DuplicatesSkipped} doublon(s) ignoré(s). " +
+                          "Sans manifeste d'export, la complétude de l'ensemble ne peut pas être affirmée.";
+        Diagnostics.ItemsSource = result.Diagnostics.Select(d => new
+        {
+            Title = d.Code,
+            Detail = d.Message + (string.IsNullOrEmpty(d.EntryPath) ? string.Empty : $" ({d.EntryPath})")
+        }).ToList();
+        var skipped = result.Counters.Errors;
+        Notice.Title = result.Cancelled ? "Import partiel" : "Import terminé";
+        Notice.Message = skipped == 0
+            ? "Les archives traitées sont dans la bibliothèque. Les éléments non associés restent visibles."
+            : $"{skipped} erreur(s) de lecture ; consultez le bilan ci-dessous.";
+        Notice.Severity = skipped == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
         Notice.IsOpen = true;
     }
 
     private void OnCancel(object sender, RoutedEventArgs e)
     {
-        ProgressPanel.Visibility = Visibility.Collapsed;
-        Notice.Title = "Import annulé";
-        Notice.Message = "Les éléments déjà validés resteraient disponibles ; relancer l'import ne créerait pas de doublon.";
-        Notice.Severity = InfoBarSeverity.Informational;
-        Notice.IsOpen = true;
+        _cts?.Cancel();
     }
 
     private async void OnNewSpace(object sender, RoutedEventArgs e)
     {
+        if (AppState.Current.Library is null)
+        {
+            Notice.Title = "Aucune bibliothèque";
+            Notice.Message = "Créez une bibliothèque depuis Réglages avant d'ajouter un espace source.";
+            Notice.Severity = InfoBarSeverity.Warning;
+            Notice.IsOpen = true;
+            return;
+        }
+
         var box = new TextBox { PlaceholderText = "Nom de l'espace (ex. Perso 2018-2023)", MaxLength = 80 };
         var dialog = new ContentDialog
         {
@@ -120,25 +232,59 @@ public sealed partial class ImportsPage : Page
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary && !string.IsNullOrWhiteSpace(box.Text))
         {
-            var id = SpaceBox.Items.Count + 1L;
-            SpaceBox.Items.Add(new ComboBoxItem { Content = box.Text.Trim(), Tag = id });
-            SpaceBox.SelectedIndex = SpaceBox.Items.Count - 1;
-            Notice.Title = "Espace ajouté";
-            Notice.Message = "Cet espace sera utilisé pour les archives sélectionnées. Les identifiants ne seront pas fusionnés avec ceux d'un autre espace.";
-            Notice.Severity = InfoBarSeverity.Success;
-            Notice.IsOpen = true;
+            try
+            {
+                await AppState.Current.Library.Catalog.CreateSpaceAsync(box.Text.Trim());
+                await AppState.Current.ReloadAsync();
+                await RefreshSpacesAsync();
+                Notice.Title = "Espace ajouté";
+                Notice.Message = "Les archives suivantes seront rattachées à cet espace ; les identifiants ne seront pas fusionnés avec ceux d'un autre espace.";
+                Notice.Severity = InfoBarSeverity.Success;
+                Notice.IsOpen = true;
+            }
+            catch (Exception ex)
+            {
+                Notice.Title = "Espace non créé";
+                Notice.Message = ex.Message;
+                Notice.Severity = InfoBarSeverity.Error;
+                Notice.IsOpen = true;
+            }
         }
     }
 
-    private void UpdateHistory()
+    private static string StatusLabel(ImportBatchInfo batch)
     {
-        var items = AppState.Current.Cards.Count == 0
-            ? null
-            : new[]
-            {
-                new { Title = "Démonstration", Detail = "22 souvenirs synthétiques · aucun fichier importé" }
-            };
-        History.ItemsSource = items;
-        HistoryEmpty.Visibility = items is null ? Visibility.Visible : Visibility.Collapsed;
+        if (batch.Status.Equals("failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return batch.Memories > 0 ? "Partiel" : "Échec";
+        }
+        return batch.Status.ToLowerInvariant() switch
+        {
+            "completed" => "Terminé",
+            "processing" => "En cours",
+            "cancelled" => "Annulé",
+            _ => batch.Status
+        };
+    }
+
+    private async Task UpdateHistoryAsync()
+    {
+        if (AppState.Current.Library is null)
+        {
+            History.ItemsSource = null;
+            HistoryEmpty.Visibility = Visibility.Visible;
+            HistoryEmpty.Text = "Aucun import : commencez par créer ou ouvrir une bibliothèque.";
+            return;
+        }
+
+        var batches = await AppState.Current.Library.Catalog.GetBatchesAsync();
+        History.ItemsSource = batches.Select(b => new
+        {
+            Title = $"{b.SpaceName} · {b.StartedAt.LocalDateTime:g}",
+            Detail = $"{StatusLabel(b)} · {b.Archives} archive(s) · {b.Memories} souvenir(s)"
+        }).ToList();
+        HistoryEmpty.Visibility = batches.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        HistoryEmpty.Text = "Aucun import enregistré.";
     }
 }
+

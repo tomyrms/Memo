@@ -185,11 +185,11 @@ public sealed partial class LibraryPage : Page
         flyout.Items.Add(new MenuFlyoutSeparator());
 
         var favorite = new MenuFlyoutItem { Text = card.IsFavorite ? "Retirer des favoris" : "Ajouter aux favoris" };
-        favorite.Click += (_, _) => ToggleFavorite(new[] { card });
+        favorite.Click += async (_, _) => await ToggleFavoriteAsync(new[] { card });
         flyout.Items.Add(favorite);
 
         var exclude = new MenuFlyoutItem { Text = card.IsExcluded ? "Réintégrer aux suggestions" : "Masquer des suggestions" };
-        exclude.Click += (_, _) => ToggleExcluded(new[] { card });
+        exclude.Click += async (_, _) => await ToggleExcludedAsync(new[] { card });
         flyout.Items.Add(exclude);
 
         flyout.ShowAt(Grid, new FlyoutShowOptions { Position = e.GetPosition(Grid) });
@@ -210,28 +210,28 @@ public sealed partial class LibraryPage : Page
     }
 
     private void OnFavoriteSelection(object sender, RoutedEventArgs e)
-        => ToggleFavorite(Selected());
+        => _ = ToggleFavoriteAsync(Selected());
 
     private void OnExcludeSelection(object sender, RoutedEventArgs e)
-        => ToggleExcluded(Selected());
+        => _ = ToggleExcludedAsync(Selected());
 
     private List<MemoryCard> Selected()
         => Grid.SelectedItems.OfType<MemoryCard>().ToList();
 
-    private void ToggleFavorite(IReadOnlyList<MemoryCard> cards)
+    private async Task ToggleFavoriteAsync(IReadOnlyList<MemoryCard> cards)
     {
         foreach (var card in cards)
         {
-            Replace(card with { IsFavorite = !card.IsFavorite });
+            await AppState.Current.SetFavoriteAsync(card.Id, !card.IsFavorite);
         }
         Refresh();
     }
 
-    private void ToggleExcluded(IReadOnlyList<MemoryCard> cards)
+    private async Task ToggleExcludedAsync(IReadOnlyList<MemoryCard> cards)
     {
         foreach (var card in cards)
         {
-            Replace(card with { IsExcluded = !card.IsExcluded });
+            await AppState.Current.SetExcludedAsync(card.Id, !card.IsExcluded);
         }
         Refresh();
     }
@@ -294,15 +294,7 @@ public sealed partial class LibraryPage : Page
         }
         if (combo.SelectedItem is ComboBoxItem item && item.Tag is long albumId)
         {
-            var albums = AppState.Current.Albums;
-            for (var i = 0; i < albums.Count; i++)
-            {
-                if (albums[i].Id == albumId)
-                {
-                    albums[i] = albums[i] with { ItemCount = albums[i].ItemCount + cards.Count };
-                    break;
-                }
-            }
+            await AppState.Current.AddToAlbumAsync(albumId, cards.Select(c => c.Id).ToList());
         }
     }
 
@@ -361,7 +353,42 @@ public sealed partial class LibraryPage : Page
             Margin = new Thickness(0, 12, 0, 0)
         };
         panel.Children.Add(picker);
-        panel.Children.Add(Widgets.Caption("La date d'origine reste conservée. Ici, la correction est locale à la démonstration."));
+
+        var locationLabel = new TextBox
+        {
+            Header = "Lieu",
+            Text = card.LocationLabel ?? string.Empty,
+            PlaceholderText = "Ex. Lausanne",
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        var latitude = new NumberBox
+        {
+            Header = "Latitude",
+            Value = card.Latitude ?? double.NaN,
+            Minimum = -90,
+            Maximum = 90,
+            SmallChange = 0.0001,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden,
+            Margin = new Thickness(0, 8, 0, 0)
+        };
+        var longitude = new NumberBox
+        {
+            Header = "Longitude",
+            Value = card.Longitude ?? double.NaN,
+            Minimum = -180,
+            Maximum = 180,
+            SmallChange = 0.0001,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Hidden
+        };
+        var coords = new Grid { ColumnSpacing = 8 };
+        coords.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        coords.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        coords.Children.Add(latitude);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(longitude, 1);
+        coords.Children.Add(longitude);
+        panel.Children.Add(locationLabel);
+        panel.Children.Add(coords);
+        panel.Children.Add(Widgets.Caption("La date d'origine reste conservée. Le lieu n'est jamais déduit de l'historique du compte."));
 
         var dialog = new ContentDialog
         {
@@ -373,9 +400,22 @@ public sealed partial class LibraryPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && picker.Date is { } chosen)
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            Replace(card with { LocalDate = DateOnly.FromDateTime(chosen.Date), DateSource = DateSource.User });
+            if (picker.Date is { } chosen)
+            {
+                await AppState.Current.SetDateOverrideAsync(card.Id, DateOnly.FromDateTime(chosen.Date));
+            }
+
+            double? lat = double.IsNaN(latitude.Value) ? null : latitude.Value;
+            double? lon = double.IsNaN(longitude.Value) ? null : longitude.Value;
+            if (lat is null || lon is null)
+            {
+                lat = null;
+                lon = null;
+            }
+            var label = string.IsNullOrWhiteSpace(locationLabel.Text) ? null : locationLabel.Text.Trim();
+            await AppState.Current.SetLocationAsync(card.Id, lat, lon, label);
             Refresh();
         }
     }
@@ -395,6 +435,10 @@ public sealed partial class LibraryPage : Page
         public string Key { get; }
     }
 }
+
+
+
+
 
 
 

@@ -32,11 +32,16 @@
                 </Grid.RowDefinitions>
                 <AutoSuggestBox
                     x:Name="Query"
-                    MaxWidth="460"
+                    Width="360"
                     HorizontalAlignment="Left"
                     PlaceholderText="Lieu, date, texte reconnu…"
                     QueryIcon="Find"
                     TextChanged="OnQueryChanged" />
+                <TextBlock
+                    x:Name="ResultCount"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MemoCaptionTextStyle}" />
                 <GridView
                     x:Name="Results"
                     Grid.Row="1"
@@ -128,4 +133,6 @@
         </Grid>
     </Grid>
 </Page>
+
+
 
