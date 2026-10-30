@@ -4,7 +4,49 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Memo.App.Controls"
     IsTabStop="True"
-    KeyDown="OnKeyDown">
+    KeyDown="OnKeyDown"
+    RequestedTheme="Dark">
+
+    <UserControl.Resources>
+        <!-- Commandes de transport : cible de 44 px, fond discret, focus système conservé. -->
+        <Style x:Key="StoryIconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="Width" Value="44" />
+            <Setter Property="Height" Value="44" />
+            <Setter Property="MinWidth" Value="44" />
+            <Setter Property="MinHeight" Value="44" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Foreground" Value="#F4EFE7" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+        </Style>
+
+        <!-- Actions secondaires : libellé explicite, hauteur 36 px, fond très légèrement teinté. -->
+        <Style x:Key="StoryActionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Background" Value="#14F4EFE7" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Foreground" Value="#F4EFE7" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+        </Style>
+
+        <!-- Bascule du calque : l'état coché reste discret pour ne pas concurrencer la photo. -->
+        <Style x:Key="StoryToggleButtonStyle" TargetType="ToggleButton" BasedOn="{StaticResource DefaultToggleButtonStyle}">
+            <Setter Property="Height" Value="36" />
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Foreground" Value="#F4EFE7" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="UseSystemFocusVisuals" Value="True" />
+        </Style>
+    </UserControl.Resources>
 
     <Grid Background="#0E0D0C">
         <Grid.RowDefinitions>
@@ -42,147 +84,253 @@
                     Glyph="&#xE768;" />
             </Button>
 
-            <Border
-                Margin="0,8,10,0"
-                Padding="6,2"
-                HorizontalAlignment="Right"
-                VerticalAlignment="Top"
-                Background="#B3000000"
-                CornerRadius="3">
-                <TextBlock
-                    x:Name="Counter"
-                    AutomationProperties.LiveSetting="Polite"
-                    FontSize="12"
-                    Foreground="White" />
-            </Border>
-
         </Grid>
 
         <Grid
             x:Name="ControlsBar"
             Grid.Row="2"
-            Margin="32,0,32,18">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+            Margin="24,0,24,14"
+            RowSpacing="6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <StackPanel
-                x:Name="Caption"
-                VerticalAlignment="Center"
-                Spacing="2">
-                <TextBlock
-                    x:Name="CaptionTitle"
-                    FontSize="15"
-                    Foreground="#F4EFE7" />
-                <TextBlock
-                    x:Name="CaptionSubtitle"
-                    FontSize="12"
-                    Foreground="#B0A79A" />
-            </StackPanel>
+            <!-- Ligne 1 : légende, position dans la Story et actions secondaires. -->
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
 
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="4">
-                <Button
-                    x:Name="ExportButton" AutomationProperties.Name="Exporter la Story en vidéo"
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnExport"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Exporter cette Story en vidéo">
-                    <FontIcon
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE74E;" />
-                </Button>
-                <Button
-                    x:Name="OverlayButton" AutomationProperties.Name="Afficher ou masquer le calque"
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnToggleOverlay"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Afficher ou masquer le calque (O)">
-                    <FontIcon
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE790;" />
-                </Button>
-                <Button
-                    x:Name="MuteButton" AutomationProperties.Name="Couper ou rétablir le son"
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnToggleMute"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Couper le son (M)">
-                    <FontIcon
-                        x:Name="MuteIcon"
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE767;" />
-                </Button>
-                <Button
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnPrevious" AutomationProperties.Name="Souvenir précédent"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Précédent (flèche gauche)">
-                    <FontIcon
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE892;" />
-                </Button>
-                <Button
-                    x:Name="PlayButton" AutomationProperties.Name="Mettre en pause ou reprendre"
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnPlayPause"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Lecture ou pause (espace)">
-                    <FontIcon
-                        x:Name="PlayIcon"
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE769;" />
-                </Button>
-                <Button
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnNext" AutomationProperties.Name="Souvenir suivant"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Suivant (flèche droite)">
-                    <FontIcon
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE893;" />
-                </Button>
-                <Button
-                    Width="40"
-                    Height="40"
-                    Background="Transparent"
-                    BorderThickness="0"
-                    Click="OnClose" AutomationProperties.Name="Fermer la lecture"
-                    CornerRadius="20"
-                    ToolTipService.ToolTip="Fermer (Échap)">
-                    <FontIcon
-                        FontSize="16"
-                        Foreground="#F4EFE7"
-                        Glyph="&#xE711;" />
-                </Button>
-            </StackPanel>
+                <Grid
+                    x:Name="Caption"
+                    VerticalAlignment="Center"
+                    ColumnSpacing="10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border
+                        Padding="7,2"
+                        VerticalAlignment="Center"
+                        Background="#1FF4EFE7"
+                        CornerRadius="4">
+                        <TextBlock
+                            x:Name="Counter"
+                            AutomationProperties.LiveSetting="Polite"
+                            FontSize="12"
+                            Foreground="#F4EFE7"
+                            Text="1 / 1" />
+                    </Border>
+                    <StackPanel
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Spacing="1">
+                        <TextBlock
+                            x:Name="CaptionTitle"
+                            FontSize="16"
+                            Foreground="#F4EFE7"
+                            MaxLines="1"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            x:Name="CaptionSubtitle"
+                            FontSize="12"
+                            Foreground="#B0A79A"
+                            MaxLines="1"
+                            TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel
+                    Grid.Column="1"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="6">
+                    <ToggleButton
+                        x:Name="OverlayToggle"
+                        AutomationProperties.HelpText="Affiche ou masque le calque du souvenir (O)"
+                        AutomationProperties.Name="Calque"
+                        Click="OnToggleOverlay"
+                        IsChecked="True"
+                        Style="{StaticResource StoryToggleButtonStyle}"
+                        TabIndex="5"
+                        ToolTipService.ToolTip="Afficher ou masquer le calque (O)">
+                        <ToggleButton.Resources>
+                            <SolidColorBrush x:Key="ToggleButtonBackgroundChecked" Color="#1FF4EFE7" />
+                            <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPointerOver" Color="#29F4EFE7" />
+                            <SolidColorBrush x:Key="ToggleButtonBackgroundCheckedPressed" Color="#14F4EFE7" />
+                            <SolidColorBrush x:Key="ToggleButtonBorderBrushChecked" Color="Transparent" />
+                            <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPointerOver" Color="Transparent" />
+                            <SolidColorBrush x:Key="ToggleButtonBorderBrushCheckedPressed" Color="Transparent" />
+                            <SolidColorBrush x:Key="ToggleButtonForegroundChecked" Color="#F4EFE7" />
+                            <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPointerOver" Color="#F4EFE7" />
+                            <SolidColorBrush x:Key="ToggleButtonForegroundCheckedPressed" Color="#F4EFE7" />
+                        </ToggleButton.Resources>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon
+                                x:Name="OverlayIcon"
+                                FontSize="16"
+                                Glyph="&#xE790;" />
+                            <TextBlock x:Name="OverlayLabel" Text="Calque" />
+                        </StackPanel>
+                    </ToggleButton>
+
+                    <Button
+                        x:Name="SaveMediaButton"
+                        AutomationProperties.HelpText="Copie le média source tel quel, sans réencodage, avec un fichier JSON de métadonnées."
+                        AutomationProperties.Name="Enregistrer le média courant"
+                        Click="OnSaveMedia"
+                        Style="{StaticResource StoryActionButtonStyle}"
+                        TabIndex="6"
+                        ToolTipService.ToolTip="Enregistrer le média source sans réencodage">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="16" Glyph="&#xE74E;" />
+                            <TextBlock Text="Enregistrer le média" />
+                        </StackPanel>
+                    </Button>
+
+                    <ProgressRing
+                        x:Name="SaveProgress"
+                        Width="16"
+                        Height="16"
+                        Margin="2,0"
+                        AutomationProperties.LiveSetting="Polite"
+                        AutomationProperties.Name="Enregistrement du média en cours"
+                        Foreground="#E39A5C"
+                        IsActive="False"
+                        Visibility="Collapsed" />
+
+                    <Button
+                        x:Name="ExportButton"
+                        AutomationProperties.HelpText="Ouvre la prévisualisation, puis réencode toute la Story en un fichier MP4."
+                        AutomationProperties.Name="Exporter la Story en vidéo"
+                        Click="OnExport"
+                        Style="{StaticResource StoryActionButtonStyle}"
+                        TabIndex="7"
+                        ToolTipService.ToolTip="Exporter toute la Story en vidéo MP4">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="16" Glyph="&#xE714;" />
+                            <TextBlock Text="Exporter la Story" />
+                        </StackPanel>
+                    </Button>
+
+                    <Button
+                        x:Name="CloseButton"
+                        AutomationProperties.Name="Fermer la lecture"
+                        Click="OnClose"
+                        Style="{StaticResource StoryIconButtonStyle}"
+                        TabIndex="8"
+                        ToolTipService.ToolTip="Fermer (Échap)">
+                        <FontIcon FontSize="16" Glyph="&#xE711;" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Ligne 2 : transport centré, position à gauche, volume à droite. -->
+            <Grid Grid.Row="1" ColumnSpacing="14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock
+                    x:Name="TimeText"
+                    MinWidth="92"
+                    VerticalAlignment="Center"
+                    AutomationProperties.Name="Position de lecture"
+                    FontSize="13"
+                    Foreground="#B0A79A"
+                    Text="0:00 / 0:00"
+                    ToolTipService.ToolTip="Temps courant et durée" />
+
+                <StackPanel
+                    Grid.Column="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="2">
+                    <Button
+                        x:Name="PreviousButton"
+                        AutomationProperties.Name="Souvenir précédent"
+                        Click="OnPrevious"
+                        Style="{StaticResource StoryIconButtonStyle}"
+                        TabIndex="0"
+                        ToolTipService.ToolTip="Précédent (flèche gauche)">
+                        <FontIcon FontSize="16" Glyph="&#xE892;" />
+                    </Button>
+
+                    <Button
+                        x:Name="PlayButton"
+                        Width="48"
+                        Height="48"
+                        Padding="0"
+                        AutomationProperties.Name="Mettre en pause ou reprendre"
+                        Click="OnPlayPause"
+                        CornerRadius="6"
+                        Style="{StaticResource AccentButtonStyle}"
+                        TabIndex="1"
+                        ToolTipService.ToolTip="Lecture ou pause (espace)">
+                        <FontIcon
+                            x:Name="PlayIcon"
+                            FontSize="18"
+                            Glyph="&#xE769;" />
+                    </Button>
+
+                    <Button
+                        x:Name="NextButton"
+                        AutomationProperties.Name="Souvenir suivant"
+                        Click="OnNext"
+                        Style="{StaticResource StoryIconButtonStyle}"
+                        TabIndex="2"
+                        ToolTipService.ToolTip="Suivant (flèche droite)">
+                        <FontIcon FontSize="16" Glyph="&#xE893;" />
+                    </Button>
+                </StackPanel>
+
+                <StackPanel
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="4">
+                    <Button
+                        x:Name="MuteButton"
+                        AutomationProperties.Name="Couper le son"
+                        Click="OnToggleMute"
+                        Style="{StaticResource StoryIconButtonStyle}"
+                        TabIndex="3"
+                        ToolTipService.ToolTip="Couper le son (M)">
+                        <FontIcon
+                            x:Name="MuteIcon"
+                            FontSize="16"
+                            Glyph="&#xE767;" />
+                    </Button>
+
+                    <Slider
+                        x:Name="VolumeSlider"
+                        Width="120"
+                        AutomationProperties.HelpText="Volume de lecture de 0 à 100, conservé pendant la session."
+                        AutomationProperties.Name="Volume"
+                        LargeChange="10"
+                        Maximum="100"
+                        Minimum="0"
+                        SmallChange="1"
+                        StepFrequency="1"
+                        TabIndex="4"
+                        ValueChanged="OnVolumeChanged" />
+
+                    <TextBlock
+                        x:Name="VolumeValue"
+                        Width="42"
+                        VerticalAlignment="Center"
+                        FontSize="12"
+                        Foreground="#B0A79A"
+                        Text="100 %"
+                        TextAlignment="Right" />
+                </StackPanel>
+            </Grid>
         </Grid>
 
         <!-- Prévisualisation : ordre, durées, calques, audio et options avant tout rendu. -->
@@ -219,7 +367,7 @@
                                 FontSize="20"
                                 FontWeight="SemiBold"
                                 Foreground="#F4EFE7"
-                                Text="Prévisualiser l'export" />
+                                Text="Exporter la Story" />
                             <TextBlock
                                 x:Name="PreviewSummary"
                                 AutomationProperties.LiveSetting="Polite"
@@ -238,6 +386,13 @@
                             IsActive="False"
                             Visibility="Collapsed" />
                     </Grid>
+
+                    <TextBlock
+                        Grid.Row="1"
+                        FontSize="12"
+                        Foreground="#B0A79A"
+                        Text="Cet export réencode toute la Story en un seul MP4. Pour conserver un média original sans réencodage, utilisez « Enregistrer le média » dans le lecteur."
+                        TextWrapping="Wrap" />
 
                     <Grid Grid.Row="2">
                         <ScrollViewer
@@ -366,11 +521,12 @@
                         <Button
                             x:Name="PreviewExportButton"
                             Padding="18,8"
+                            AutomationProperties.HelpText="Réencode toute la Story et enregistre un fichier MP4."
                             AutomationProperties.Name="Lancer l'export de la Story"
                             Background="#E39A5C"
                             BorderThickness="0"
                             Click="OnPreviewStartExport"
-                            Content="Exporter"
+                            Content="Exporter la Story"
                             CornerRadius="6"
                             Foreground="#241407"
                             IsEnabled="False" />
