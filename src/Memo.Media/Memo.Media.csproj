@@ -11,7 +11,7 @@
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="4.154.0" />
     <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.154.0" />
-    <PackageReference Include="LibVLCSharp" Version="3.10.2" PrivateAssets="all" />
+    <PackageReference Include="LibVLCSharp" Version="3.10.2" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
   </ItemGroup>
   <ItemGroup>
@@ -21,4 +21,5 @@
     <InternalsVisibleTo Include="Memo.Media.Tests" />
   </ItemGroup>
 </Project>
+
 

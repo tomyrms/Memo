@@ -20,7 +20,7 @@ public sealed class MediaStage : UserControl
 
     private LibVLC? _libVlc;
     private MediaPlayer? _player;
-    private Media? _media;
+    private LibVLCSharp.Shared.Media? _media;
     private SKBitmap? _frame;
     private SKBitmap? _photo;
     private SKBitmap? _overlay;
@@ -72,7 +72,7 @@ public sealed class MediaStage : UserControl
             return;
         }
 
-        _media = new Media(_libVlc, new Uri(path));
+        _media = new LibVLCSharp.Shared.Media(_libVlc, new Uri(path));
         _player.Play(_media);
     }
 
@@ -335,5 +335,6 @@ public sealed class MediaStage : UserControl
         }
     }
 }
+
 
 
