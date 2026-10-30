@@ -18,11 +18,20 @@ public sealed partial class SearchPage : Page
 
     private List<MemoryCard> _results = new();
     private bool _ready;
+    private CancellationTokenSource? _searchCts;
+    private int _searchGeneration;
+
+    /// <summary>Pause avant d'interroger le catalogue, en millisecondes.</summary>
+    private const int SearchDelayMs = 275;
 
     public SearchPage()
     {
         InitializeComponent();
-        Loaded += async (_, _) => { _ready = true; await RunAsync(string.Empty); };
+        Loaded += async (_, _) =>
+        {
+            _ready = true;
+            await RunAsync(string.Empty, ++_searchGeneration, CancellationToken.None);
+        };
     }
 
     private async void OnModeChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
@@ -50,16 +59,70 @@ public sealed partial class SearchPage : Page
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
         {
-            _ = RunAsync(sender.Text);
+            ScheduleSearch(sender.Text);
         }
     }
 
-    private async Task RunAsync(string query)
+    /// <summary>
+    /// Programme une recherche après une courte pause. Chaque frappe annule la requête
+    /// précédente : une réponse lente ne peut donc pas remplacer un texte plus récent.
+    /// </summary>
+    private void ScheduleSearch(string query)
+    {
+        CancelPendingSearch();
+        var generation = ++_searchGeneration;
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        _ = DebouncedSearchAsync(query, generation, cts);
+    }
+
+    private void CancelPendingSearch()
+    {
+        // Le jeton est annulé ici ; la tâche qui le possède le libère dans son finally.
+        _searchCts?.Cancel();
+        _searchCts = null;
+    }
+
+    private async Task DebouncedSearchAsync(string query, int generation, CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(SearchDelayMs, cts.Token);
+            await RunAsync(query, generation, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Requête remplacée par une frappe plus récente : aucun résultat n'est appliqué.
+        }
+        catch (Exception ex) when (!cts.IsCancellationRequested)
+        {
+            // Une erreur du catalogue ne doit pas laisser les résultats de la requête précédente.
+            if (generation == _searchGeneration)
+            {
+                _results = new List<MemoryCard>();
+                Results.ItemsSource = _results;
+                ResultCount.Text = "Recherche indisponible";
+                EmptyText.Visibility = Visibility.Visible;
+                EmptyText.Text = "La recherche a échoué : " + ex.Message;
+            }
+        }
+        finally
+        {
+            cts.Dispose();
+            if (ReferenceEquals(_searchCts, cts))
+            {
+                _searchCts = null;
+            }
+        }
+    }
+
+    private async Task RunAsync(string query, int generation, CancellationToken ct)
     {
         var q = query.Trim();
+        List<MemoryCard> results;
         if (AppState.Current.Library is not null)
         {
-            _results = (await AppState.Current.SearchAsync(q)).ToList();
+            results = (await AppState.Current.SearchAsync(q, ct)).ToList();
         }
         else
         {
@@ -72,8 +135,17 @@ public sealed partial class SearchPage : Page
                     (DemoOcr.TryGetValue(c.Id, out var ocr) && ocr.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
                     (c.LocalDate?.ToString("d MMMM yyyy", AppState.French).Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
             }
-            _results = cards.OrderByDescending(c => c.LocalDate).ToList();
+            results = cards.OrderByDescending(c => c.LocalDate).ToList();
         }
+
+        ct.ThrowIfCancellationRequested();
+        if (generation != _searchGeneration)
+        {
+            // Une requête plus récente est déjà en cours : ce résultat est obsolète.
+            return;
+        }
+
+        _results = results;
         Results.ItemsSource = _results;
         ResultCount.Text = _results.Count == 1 ? "1 souvenir" : $"{_results.Count} souvenirs";
         EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -90,11 +162,10 @@ public sealed partial class SearchPage : Page
         }
     }
 
-    private async void OnPerson1(object sender, RoutedEventArgs e) => await LoadPeopleAsync();
-
     private async Task LoadPeopleAsync()
     {
         PeopleList.Children.Clear();
+        PeopleNotice.IsOpen = false;
         if (AppState.Current.Library is null)
         {
             PeopleStatus.Text = "Ouvrez une bibliothèque pour charger les groupes de visages.";
@@ -108,12 +179,16 @@ public sealed partial class SearchPage : Page
             return;
         }
 
-        PeopleStatus.Text = $"{groups.Count} groupe(s) proposé(s). Les noms restent à confirmer par vous.";
+        PeopleStatus.Text = $"{groups.Count} groupe(s) proposé(s). Clic droit sur un groupe pour le renommer, le fusionner ou le supprimer.";
         foreach (var group in groups)
         {
             PeopleList.Children.Add(PersonTile(group));
         }
     }
+
+    /// <summary>Nom affiché d'un groupe : les groupes non nommés restent distinguables par leur couverture.</summary>
+    private static string GroupLabel(PersonGroupInfo group)
+        => string.IsNullOrWhiteSpace(group.Name) ? "Groupe sans nom" : group.Name;
 
     private Button PersonTile(PersonGroupInfo group)
     {
@@ -135,7 +210,7 @@ public sealed partial class SearchPage : Page
         panel.Children.Add(cover);
         panel.Children.Add(new TextBlock
         {
-            Text = string.IsNullOrWhiteSpace(group.Name) ? "Groupe sans nom" : group.Name,
+            Text = GroupLabel(group),
             Style = Widgets.Style("MemoBodyTextStyle")
         });
         panel.Children.Add(new TextBlock
@@ -151,6 +226,27 @@ public sealed partial class SearchPage : Page
             Padding = new Thickness(0)
         };
         button.Click += async (_, _) => await ShowPersonGroupAsync(group);
+
+        // Les corrections restent accessibles au clic droit, sans masquer les souvenirs du groupe.
+        var menu = new MenuFlyout();
+        var open = new MenuFlyoutItem { Text = "Voir les souvenirs" };
+        open.Click += async (_, _) => await ShowPersonGroupAsync(group);
+        menu.Items.Add(open);
+        var rename = new MenuFlyoutItem { Text = "Renommer…" };
+        rename.Click += async (_, _) => await RenameGroupAsync(group);
+        menu.Items.Add(rename);
+        var merge = new MenuFlyoutItem { Text = "Fusionner avec…" };
+        merge.Click += async (_, _) => await MergeGroupAsync(group);
+        menu.Items.Add(merge);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var delete = new MenuFlyoutItem { Text = "Supprimer…" };
+        delete.Click += async (_, _) => await DeleteGroupAsync(group);
+        menu.Items.Add(delete);
+        button.ContextFlyout = menu;
+
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            button,
+            $"{GroupLabel(group)}, {group.MemoryCount} souvenir(s), {group.FaceCount} visage(s). Clic droit pour les actions.");
         return button;
     }
 
@@ -164,7 +260,7 @@ public sealed partial class SearchPage : Page
         var cards = AppState.Current.Cards.Where(c => ids.Contains(c.Id)).ToList();
         var body = new StackPanel { Spacing = 8, MinWidth = 360 };
         body.Children.Add(Widgets.Secondary($"{cards.Count} souvenir(s) associé(s)."));
-        body.Children.Add(Widgets.Caption("Les groupes sont des propositions locales, pas des identités certaines. Corrigez-les dans une prochaine version."));
+        body.Children.Add(Widgets.Caption("Les groupes sont des propositions locales, pas des identités certaines. Renommez, fusionnez ou supprimez-les selon vos souvenirs."));
         var play = new Button
         {
             Content = "Lire ces souvenirs",
@@ -180,6 +276,18 @@ public sealed partial class SearchPage : Page
         };
         body.Children.Add(play);
 
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var rename = new Button { Content = "Renommer", Style = Widgets.Style("MemoSecondaryButtonStyle") };
+        var merge = new Button { Content = "Fusionner…", Style = Widgets.Style("MemoSecondaryButtonStyle") };
+        var delete = new Button { Content = "Supprimer…", Style = Widgets.Style("MemoQuietButtonStyle") };
+        actions.Children.Add(rename);
+        actions.Children.Add(merge);
+        actions.Children.Add(delete);
+        body.Children.Add(actions);
+
+        // L'action est mémorisée puis exécutée après la fermeture : un ContentDialog ne peut pas
+        // en ouvrir un autre avant que le premier ait rendu la main.
+        string? pending = null;
         var dialog = new ContentDialog
         {
             Title = string.IsNullOrWhiteSpace(group.Name) ? "Groupe de visages" : group.Name,
@@ -187,7 +295,193 @@ public sealed partial class SearchPage : Page
             CloseButtonText = "Fermer",
             XamlRoot = XamlRoot
         };
+        rename.Click += (_, _) => { pending = "rename"; dialog.Hide(); };
+        merge.Click += (_, _) => { pending = "merge"; dialog.Hide(); };
+        delete.Click += (_, _) => { pending = "delete"; dialog.Hide(); };
         await dialog.ShowAsync();
+
+        switch (pending)
+        {
+            case "rename":
+                await RenameGroupAsync(group);
+                break;
+            case "merge":
+                await MergeGroupAsync(group);
+                break;
+            case "delete":
+                await DeleteGroupAsync(group);
+                break;
+        }
+    }
+
+    private async Task RenameGroupAsync(PersonGroupInfo group)
+    {
+        if (AppState.Current.Library is null)
+        {
+            return;
+        }
+
+        var nameBox = new TextBox
+        {
+            Text = group.Name ?? string.Empty,
+            PlaceholderText = "Nom du groupe",
+            MaxLength = 80
+        };
+        var dialog = new ContentDialog
+        {
+            Title = "Renommer le groupe",
+            Content = nameBox,
+            PrimaryButtonText = "Enregistrer",
+            CloseButtonText = "Annuler",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        var name = nameBox.Text.Trim();
+        if (name.Length == 0)
+        {
+            ShowPeopleNotice("Nom requis", "Saisissez un nom non vide pour ce groupe.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        try
+        {
+            await AppState.Current.Library.Analysis.RenamePersonGroupAsync(group.Id, name);
+            await LoadPeopleAsync();
+            ShowPeopleNotice(
+                "Groupe renommé",
+                $"Le groupe s'appelle désormais « {name} ». Il reste une proposition, pas une identité vérifiée.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowPeopleNotice("Renommage impossible", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async Task MergeGroupAsync(PersonGroupInfo group)
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            return;
+        }
+
+        var groups = await library.Analysis.GetPersonGroupsAsync();
+        var others = groups.Where(g => g.Id != group.Id).ToList();
+        if (others.Count == 0)
+        {
+            ShowPeopleNotice("Fusion impossible", "Il faut au moins deux groupes pour fusionner.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        var combo = new ComboBox { MinWidth = 320, HorizontalAlignment = HorizontalAlignment.Stretch };
+        foreach (var other in others)
+        {
+            combo.Items.Add(new ComboBoxItem
+            {
+                Content = $"{GroupLabel(other)} · {other.MemoryCount} souvenir(s)",
+                Tag = other.Id
+            });
+        }
+        combo.SelectedIndex = 0;
+
+        var body = new StackPanel { Spacing = 8, MinWidth = 360 };
+        body.Children.Add(Widgets.Secondary($"Choisissez le groupe à rattacher à « {GroupLabel(group)} »."));
+        body.Children.Add(combo);
+        body.Children.Add(Widgets.Caption(
+            "Les visages du groupe choisi rejoignent le groupe ouvert, puis le groupe choisi est supprimé. " +
+            "Les souvenirs et les médias ne sont pas modifiés. Si le groupe ouvert n'a pas de nom, le nom du groupe fusionné est conservé."));
+
+        var dialog = new ContentDialog
+        {
+            Title = "Fusionner deux groupes",
+            Content = body,
+            PrimaryButtonText = "Fusionner",
+            CloseButtonText = "Annuler",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+        if (combo.SelectedItem is not ComboBoxItem item || item.Tag is not long sourceId)
+        {
+            return;
+        }
+
+        try
+        {
+            await library.Analysis.MergePersonGroupsAsync(group.Id, sourceId);
+            var sourceName = others.FirstOrDefault(g => g.Id == sourceId)?.Name;
+            if (string.IsNullOrWhiteSpace(group.Name) && !string.IsNullOrWhiteSpace(sourceName))
+            {
+                // Le groupe cible n'avait pas de nom : on conserve celui saisi sur l'autre groupe.
+                await library.Analysis.RenamePersonGroupAsync(group.Id, sourceName!);
+            }
+            await LoadPeopleAsync();
+            ShowPeopleNotice(
+                "Groupes fusionnés",
+                "Les visages ont été réunis dans un seul groupe. Vérifiez la proposition et corrigez-la si nécessaire.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            ShowPeopleNotice("Fusion impossible", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async Task DeleteGroupAsync(PersonGroupInfo group)
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "Supprimer ce groupe ?",
+            Content =
+                $"« {GroupLabel(group)} » ({group.MemoryCount} souvenir(s), {group.FaceCount} visage(s)) sera supprimé. " +
+                "Les visages restent détectés mais ne sont plus associés à un groupe. " +
+                "Aucun souvenir, média ou album n'est supprimé.",
+            PrimaryButtonText = "Supprimer",
+            CloseButtonText = "Annuler",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        try
+        {
+            await library.Analysis.DeletePersonGroupAsync(group.Id);
+            await LoadPeopleAsync();
+            ShowPeopleNotice(
+                "Groupe supprimé",
+                "Les souvenirs et les médias sont intacts. Une nouvelle analyse peut proposer d'autres groupes.",
+                InfoBarSeverity.Informational);
+        }
+        catch (Exception ex)
+        {
+            ShowPeopleNotice("Suppression impossible", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private void ShowPeopleNotice(string title, string message, InfoBarSeverity severity)
+    {
+        PeopleNotice.Title = title;
+        PeopleNotice.Message = message;
+        PeopleNotice.Severity = severity;
+        PeopleNotice.IsOpen = true;
     }
 
     private void PopulateReferences()

@@ -80,10 +80,17 @@
                     IsOpen="True"
                     Severity="Informational"
                     Title="Fonction facultative"
-                    Message="Les groupes de visages sont calculés localement, sans nom automatique. Ils restent corrigeables et supprimables." />
+                    Message="Les groupes de visages sont calculés localement, sans nom automatique. Restent des propositions : renommez-les, fusionnez-les ou supprimez-les librement." />
                 <StackPanel Grid.Row="1" Spacing="12">
                     <TextBlock x:Name="PeopleStatus" Style="{StaticResource MemoSecondaryTextStyle}" />
-                    <StackPanel x:Name="PeopleList" Orientation="Horizontal" Spacing="12" />
+                    <InfoBar x:Name="PeopleNotice" IsClosable="True" IsOpen="False" />
+                    <ScrollViewer
+                        HorizontalScrollBarVisibility="Auto"
+                        HorizontalScrollMode="Enabled"
+                        VerticalScrollBarVisibility="Disabled"
+                        VerticalScrollMode="Disabled">
+                        <StackPanel x:Name="PeopleList" Orientation="Horizontal" Spacing="12" />
+                    </ScrollViewer>
                 </StackPanel>
             </Grid>
 

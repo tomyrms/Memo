@@ -171,6 +171,87 @@
 
             <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
                 <StackPanel Spacing="12">
+                    <TextBlock Text="Données d'analyse" Style="{StaticResource MemoSectionTextStyle}" />
+                    <TextBlock
+                        x:Name="AnalysisDataStats"
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Ouvrez une bibliothèque pour consulter les données d'analyse." />
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Textes reconnus (OCR)" Style="{StaticResource MemoBodyTextStyle}" />
+                            <TextBlock
+                                Style="{StaticResource MemoCaptionTextStyle}"
+                                Text="Alimentent la recherche texte. Supprimables et recalculables à volonté." />
+                        </StackPanel>
+                        <Button
+                            x:Name="ClearOcrButton"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Click="OnClearOcr"
+                            Content="Supprimer les textes"
+                            Foreground="{ThemeResource MemoDangerBrush}"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </Grid>
+
+                    <Border Style="{StaticResource MemoDividerStyle}" />
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Empreintes visuelles" Style="{StaticResource MemoBodyTextStyle}" />
+                            <TextBlock
+                                Style="{StaticResource MemoCaptionTextStyle}"
+                                Text="Servent à la recherche par ressemblance. Aucune image n'est conservée par cette empreinte." />
+                        </StackPanel>
+                        <Button
+                            x:Name="ClearVisualButton"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Click="OnClearVisual"
+                            Content="Supprimer les empreintes"
+                            Foreground="{ThemeResource MemoDangerBrush}"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </Grid>
+
+                    <Border Style="{StaticResource MemoDividerStyle}" />
+
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Visages et groupes de personnes" Style="{StaticResource MemoBodyTextStyle}" />
+                            <TextBlock
+                                Style="{StaticResource MemoCaptionTextStyle}"
+                                Text="Détections et groupes proposés dans l'onglet Personnes, y compris les noms saisis." />
+                        </StackPanel>
+                        <Button
+                            x:Name="ClearFacesButton"
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Click="OnClearFaces"
+                            Content="Supprimer les visages"
+                            Foreground="{ThemeResource MemoDangerBrush}"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </Grid>
+
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Ces suppressions ne touchent ni les souvenirs, ni les médias, ni les albums, ni les dates corrigées. Une nouvelle analyse peut recréer les données ; les noms de groupes saisis ne sont pas restaurés." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
                     <TextBlock Text="Sauvegarde et restauration" Style="{StaticResource MemoSectionTextStyle}" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button Click="OnBackup" Content="Sauvegarder la bibliothèque" Style="{StaticResource MemoSecondaryButtonStyle}" />
