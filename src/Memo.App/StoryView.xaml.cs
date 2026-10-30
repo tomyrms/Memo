@@ -6,6 +6,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -37,6 +38,23 @@ public sealed partial class StoryView : UserControl
     private TimeSpan _photoElapsed;
     private TimeSpan _photoDuration = TimeSpan.FromSeconds(4);
 
+    // Volume conservé pendant toute la session du lecteur. Le mode muet mémorise la
+    // dernière valeur audible pour qu'un démutage ne laisse pas le son à zéro.
+    private int _volume = 100;
+    private int _lastAudibleVolume = 100;
+    private bool _updatingVolumeUi;
+
+    // Recherche ponctuelle de l'heure exacte quand la date est connue à la seconde.
+    private CancellationTokenSource? _captionTimeCts;
+    private Task? _captionTimeTask;
+    private string? _exactTimeLabel;
+    private int _captionRequestVersion;
+
+    // Enregistrement du média courant : la copie s'exécute hors du rendu de la Story.
+    private bool _savingMedia;
+    private CancellationTokenSource? _savingMediaCts;
+    private bool _closed;
+
     // Options d'export conservées d'une prévisualisation à l'autre. La sélection elle-même
     // (_items et _index) n'est jamais modifiée par l'export.
     private StoryExportQuality _exportQuality = StoryExportQuality.Hd1080;
@@ -59,6 +77,13 @@ public sealed partial class StoryView : UserControl
     {
         InitializeComponent();
         Stage.Ended += (_, _) => Next();
+
+        // Le réglage « Activer le son » donne l'état initial ; les changements faits
+        // dans le lecteur restent ensuite valables pendant toute la session.
+        _muted = !AppState.Current.Settings.PlayAudio;
+        ApplyVolume();
+        SyncVolumeUi();
+        SyncOverlayUi();
     }
 
     public void Start(IReadOnlyList<MemoryCard> items, int index)
@@ -66,8 +91,10 @@ public sealed partial class StoryView : UserControl
         _items = items;
         _index = Math.Clamp(index, 0, items.Count - 1);
         _paused = false;
+        _closed = false;
         _playbackSuspended = false;
         ControlsBar.Visibility = Visibility.Visible;
+        SyncVolumeUi();
         BuildProgress();
         Focus(FocusState.Programmatic);
         ShowCurrent();
@@ -113,15 +140,21 @@ public sealed partial class StoryView : UserControl
         }
 
         var card = _items[_index];
+        CancelCaptionTimeLookup();
+        _exactTimeLabel = null;
         Counter.Text = $"{_index + 1} / {_items.Count}";
         CaptionTitle.Text = AppState.Current.FormatDate(card);
+        AutomationProperties.SetName(CaptionTitle, CaptionTitle.Text);
         CaptionSubtitle.Text = BuildSubtitle(card);
-        _overlayVisible = true;
 
         var overlayPath = AppState.Current.OverlayFor(card.Id);
+        _overlayVisible = overlayPath is not null;
         Stage.SetOverlay(ResolvePath(overlayPath));
-        Stage.SetOverlayVisible(true);
-        OverlayButton.IsEnabled = overlayPath is not null;
+        Stage.SetOverlayVisible(_overlayVisible);
+        OverlayToggle.IsEnabled = overlayPath is not null;
+        OverlayToggle.IsChecked = _overlayVisible;
+        SyncOverlayUi();
+        UpdateSaveButtonState();
 
         _paused = false;
         _photoElapsed = TimeSpan.Zero;
@@ -147,7 +180,9 @@ public sealed partial class StoryView : UserControl
             }
         }
 
-        Stage.Mute = _muted;
+        ApplyVolume();
+        UpdateTimeReadout();
+        BeginExactTimeLookup(card);
         EnsureTimer();
     }
 
@@ -194,12 +229,14 @@ public sealed partial class StoryView : UserControl
         if (card.Kind == MediaKind.Video && Stage.IsVideo)
         {
             UpdateProgress(Stage.Position);
+            UpdateTimeReadout();
             return;
         }
 
         var elapsed = (_photoElapsed + (DateTimeOffset.Now - _photoStarted)).TotalSeconds;
         var progress = Math.Clamp(elapsed / _photoDuration.TotalSeconds, 0, 1);
         UpdateProgress(progress);
+        UpdateTimeReadout();
         if (progress >= 1)
         {
             Next();
@@ -219,6 +256,410 @@ public sealed partial class StoryView : UserControl
         }
     }
 
+    /// <summary>
+    /// Met à jour le temps courant et la durée. Pour une vidéo, la position vient du
+    /// lecteur LibVLC ; pour une photo, de la durée d'affichage effective.
+    /// </summary>
+    private void UpdateTimeReadout()
+    {
+        if (_items.Count == 0 || _index < 0 || _index >= _items.Count)
+        {
+            SetTimeText("— / —");
+            return;
+        }
+
+        MemoryCard card = _items[_index];
+        double duration;
+        double position;
+
+        if (card.Kind == MediaKind.Video)
+        {
+            duration = Stage.LengthMs > 0
+                ? Stage.LengthMs / 1000.0
+                : card.DurationMs is > 0
+                    ? card.DurationMs.Value / 1000.0
+                    : 0;
+            position = Stage.IsVideo && duration > 0 ? duration * Stage.Position : 0;
+        }
+        else
+        {
+            duration = _photoDuration.TotalSeconds;
+            double elapsed = _photoElapsed.TotalSeconds;
+            if (!_paused)
+            {
+                elapsed += (DateTimeOffset.Now - _photoStarted).TotalSeconds;
+            }
+
+            position = Math.Clamp(elapsed, 0, duration);
+        }
+
+        if (!double.IsFinite(duration) || duration <= 0)
+        {
+            SetTimeText("— / —");
+            return;
+        }
+
+        string current = StoryExportPreviewBuilder.FormatDuration(position);
+        string total = StoryExportPreviewBuilder.FormatDuration(duration);
+        SetTimeText($"{current} / {total}", $"Position {current} sur {total}");
+    }
+
+    private void SetTimeText(string text, string? accessibleName = null)
+    {
+        if (!string.Equals(TimeText.Text, text, StringComparison.Ordinal))
+        {
+            TimeText.Text = text;
+        }
+
+        string name = accessibleName ?? text;
+        if (!string.Equals(AutomationProperties.GetName(TimeText), name, StringComparison.Ordinal))
+        {
+            AutomationProperties.SetName(TimeText, name);
+        }
+    }
+
+    /// <summary>
+    /// Lance la recherche de l'heure exacte. Elle n'a lieu que si la date est
+    /// réellement connue à la seconde et si une bibliothèque fournit des candidats.
+    /// </summary>
+    private void BeginExactTimeLookup(MemoryCard card)
+    {
+        CancelCaptionTimeLookup();
+        _captionRequestVersion++;
+
+        if (card.DatePrecision != DatePrecision.Second || AppState.Current.Library is null)
+        {
+            return;
+        }
+
+        _captionTimeCts = new CancellationTokenSource();
+        _captionTimeTask = LoadExactTimeAsync(card, _captionRequestVersion, _captionTimeCts);
+    }
+
+    private void CancelCaptionTimeLookup()
+    {
+        // On annule sans disposer ici : la tâche en cours libère son propre jeton dans
+        // son finally, ce qui évite de disposer un CancellationTokenSource encore utilisé.
+        _captionTimeCts?.Cancel();
+        _captionTimeCts = null;
+        _captionTimeTask = null;
+    }
+
+    private async Task LoadExactTimeAsync(
+        MemoryCard card,
+        int version,
+        CancellationTokenSource cts)
+    {
+        CancellationToken token = cts.Token;
+        try
+        {
+            MemoLibrary? library = AppState.Current.Library;
+            if (library is null)
+            {
+                return;
+            }
+
+            IReadOnlyList<DateCandidateInfo> candidates =
+                await library.Catalog.GetDateCandidatesAsync(card.Id, token);
+
+            if (token.IsCancellationRequested ||
+                version != _captionRequestVersion ||
+                _index < 0 ||
+                _index >= _items.Count ||
+                _items[_index].Id != card.Id)
+            {
+                return;
+            }
+
+            string? time = FindExactTime(candidates, card);
+            if (time is null)
+            {
+                return;
+            }
+
+            _exactTimeLabel = time;
+            string date = AppState.Current.FormatDate(card);
+            CaptionTitle.Text = $"{date} · {time}";
+            AutomationProperties.SetName(CaptionTitle, $"{date} à {time}");
+        }
+        catch (OperationCanceledException)
+        {
+            // La légende suivante a pris le relais.
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // L'heure n'est jamais inventée : la date seule reste affichée.
+        }
+        finally
+        {
+            cts.Dispose();
+            if (ReferenceEquals(_captionTimeCts, cts))
+            {
+                _captionTimeCts = null;
+                _captionTimeTask = null;
+            }
+        }
+    }
+
+    private static string? FindExactTime(IReadOnlyList<DateCandidateInfo> candidates, MemoryCard card)
+    {
+        List<DateCandidateInfo> matching = candidates
+            .Where(c => c.Precision == DatePrecision.Second && c.LocalDate == card.LocalDate)
+            .ToList();
+        if (matching.Count == 0)
+        {
+            return null;
+        }
+
+        // La source qui a déterminé la date de la fiche est prioritaire. Si elle est
+        // présente mais illisible, on n'emprunte pas l'heure d'une autre source : cela
+        // reviendrait à inventer une information que la fiche ne porte pas.
+        List<DateCandidateInfo> preferred = matching
+            .Where(c => c.Source == card.DateSource)
+            .ToList();
+        if (preferred.Count > 0)
+        {
+            foreach (DateCandidateInfo candidate in preferred.OrderByDescending(c => c.Confidence))
+            {
+                if (TryFormatCandidateTime(candidate, out string time))
+                {
+                    return time;
+                }
+            }
+
+            return null;
+        }
+
+        foreach (DateCandidateInfo candidate in matching.OrderByDescending(c => c.Confidence))
+        {
+            if (TryFormatCandidateTime(candidate, out string time))
+            {
+                return time;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryFormatCandidateTime(DateCandidateInfo candidate, out string time)
+    {
+        time = string.Empty;
+
+        if (!string.IsNullOrWhiteSpace(candidate.InstantUtc) &&
+            DateTimeOffset.TryParse(
+                candidate.InstantUtc,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind | DateTimeStyles.AssumeUniversal,
+                out DateTimeOffset instant))
+        {
+            TimeZoneInfo? zone =
+                TryFindTimeZone(candidate.TimeZoneId) ??
+                TryFindTimeZone(AppState.Current.Settings.TimeZoneId);
+            DateTimeOffset local = zone is null
+                ? instant.ToLocalTime()
+                : TimeZoneInfo.ConvertTime(instant, zone);
+            time = local.ToString("HH:mm", CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        // Un EXIF horodaté contient l'heure locale de prise de vue dans sa valeur brute.
+        // Les formats ci-dessous exigent explicitement une heure : une date seule ne
+        // peut donc jamais produire un « 00:00 » inventé.
+        string raw = candidate.RawValue?.Trim() ?? string.Empty;
+        if (raw.Length < 16)
+        {
+            return false;
+        }
+
+        string[] formats =
+        {
+            "yyyy:MM:dd HH:mm:ss",
+            "yyyy:MM:dd HH:mm",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm",
+            "yyyy-MM-ddTHH:mm:ss",
+            "yyyy-MM-ddTHH:mm",
+        };
+
+        if (DateTime.TryParseExact(
+                raw,
+                formats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out DateTime parsed))
+        {
+            time = parsed.ToString("HH:mm", CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static TimeZoneInfo? TryFindTimeZone(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return null;
+        }
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(id);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return null;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Applique le volume effectif au lecteur natif, en tenant compte du mode muet.</summary>
+    private void ApplyVolume()
+    {
+        Stage.Volume = _muted ? 0 : _volume;
+        Stage.Mute = _muted;
+    }
+
+    private void OnVolumeChanged(object sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (_updatingVolumeUi)
+        {
+            return;
+        }
+
+        SetVolume(e.NewValue);
+    }
+
+    private void SetVolume(double value)
+    {
+        int volume = Math.Clamp(
+            (int)Math.Round(double.IsFinite(value) ? value : 0, MidpointRounding.AwayFromZero),
+            0,
+            100);
+
+        if (volume == 0)
+        {
+            // Le curseur à zéro coupe le son sans oublier la dernière valeur audible.
+            _muted = true;
+        }
+        else
+        {
+            _volume = volume;
+            _lastAudibleVolume = volume;
+            _muted = false;
+        }
+
+        ApplyVolume();
+        SyncVolumeUi();
+    }
+
+    private void SetMuted(bool muted)
+    {
+        _muted = muted;
+        if (!muted && _volume <= 0)
+        {
+            _volume = _lastAudibleVolume > 0 ? _lastAudibleVolume : 100;
+        }
+
+        ApplyVolume();
+        SyncVolumeUi();
+    }
+
+    /// <summary>Aligne l'icône, le curseur et le libellé sur le même état.</summary>
+    private void SyncVolumeUi()
+    {
+        _updatingVolumeUi = true;
+        try
+        {
+            VolumeSlider.Value = _muted ? 0 : _volume;
+            VolumeValue.Text = _muted ? "Muet" : $"{_volume} %";
+            MuteIcon.Glyph = _muted ? "\uE74F" : "\uE767";
+
+            string name = _muted ? "Rétablir le son" : "Couper le son";
+            string tooltip = _muted ? "Rétablir le son (M)" : "Couper le son (M)";
+            AutomationProperties.SetName(MuteButton, name);
+            AutomationProperties.SetHelpText(
+                MuteButton,
+                "Le volume et l'état muet sont conservés pendant la session.");
+            ToolTipService.SetToolTip(MuteButton, tooltip);
+        }
+        finally
+        {
+            _updatingVolumeUi = false;
+        }
+    }
+
+    private void OnToggleOverlay(object sender, RoutedEventArgs e)
+    {
+        if (!OverlayToggle.IsEnabled)
+        {
+            return;
+        }
+
+        _overlayVisible = OverlayToggle.IsChecked == true;
+        Stage.SetOverlayVisible(_overlayVisible);
+        SyncOverlayUi();
+    }
+
+    private void ToggleOverlay()
+    {
+        if (!OverlayToggle.IsEnabled)
+        {
+            return;
+        }
+
+        OverlayToggle.IsChecked = !(OverlayToggle.IsChecked == true);
+        _overlayVisible = OverlayToggle.IsChecked == true;
+        Stage.SetOverlayVisible(_overlayVisible);
+        SyncOverlayUi();
+    }
+
+    private void SyncOverlayUi()
+    {
+        OverlayIcon.Opacity = _overlayVisible ? 1 : 0.45;
+        OverlayLabel.Opacity = _overlayVisible ? 1 : 0.65;
+
+        AutomationProperties.SetName(
+            OverlayToggle,
+            OverlayToggle.IsEnabled
+                ? _overlayVisible ? "Masquer le calque" : "Afficher le calque"
+                : "Calque indisponible");
+        AutomationProperties.SetHelpText(
+            OverlayToggle,
+            OverlayToggle.IsEnabled
+                ? "Affiche ou masque le calque du souvenir (O)"
+                : "Ce souvenir ne possède pas de calque.");
+        ToolTipService.SetToolTip(
+            OverlayToggle,
+            OverlayToggle.IsEnabled
+                ? _overlayVisible ? "Masquer le calque (O)" : "Afficher le calque (O)"
+                : "Aucun calque pour ce souvenir");
+    }
+
+    private void UpdateSaveButtonState()
+    {
+        if (_savingMedia)
+        {
+            SaveMediaButton.IsEnabled = false;
+            ToolTipService.SetToolTip(SaveMediaButton, "Enregistrement du média en cours…");
+            return;
+        }
+
+        bool available = _items.Count > 0 &&
+                         _index >= 0 &&
+                         _index < _items.Count &&
+                         ResolvePath(AppState.Current.MediaFor(_items[_index].Id)) is not null;
+        SaveMediaButton.IsEnabled = available;
+        ToolTipService.SetToolTip(
+            SaveMediaButton,
+            available
+                ? "Enregistrer le média source sans réencodage"
+                : "Le média source de ce souvenir est introuvable");
+    }
+
     private static string? ResolvePath(string? path)
     {
         if (string.IsNullOrEmpty(path))
@@ -233,14 +674,260 @@ public sealed partial class StoryView : UserControl
         return File.Exists(path) ? path : null;
     }
 
-    private async void OnExport(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Enregistre le média source courant sans réencodage. Le calque éventuel est copié
+    /// dans un fichier distinct, à côté du média choisi ; un JSON de métadonnées accompagne
+    /// toujours la copie.
+    /// </summary>
+    private async void OnSaveMedia(object sender, RoutedEventArgs e)
     {
-        if (_items.Count == 0 || _previewOpen || _exporting)
+        if (_items.Count == 0 || _savingMedia || _previewOpen || _exporting || _closed)
         {
             return;
         }
 
-        await OpenPreviewAsync();
+        if (_index < 0 || _index >= _items.Count)
+        {
+            return;
+        }
+
+        MemoryCard card = _items[_index];
+        int itemNumber = _index + 1;
+        int itemCount = _items.Count;
+        string? main = ResolvePath(AppState.Current.MediaFor(card.Id));
+        if (main is null)
+        {
+            await ShowMessageAsync(
+                "Média introuvable",
+                "Le média source de ce souvenir n'est pas disponible dans la bibliothèque. " +
+                "Aucun fichier n'a été enregistré.");
+            return;
+        }
+
+        bool pausedBySave = !_paused;
+        _savingMedia = true;
+        _savingMediaCts = new CancellationTokenSource();
+        if (pausedBySave)
+        {
+            SetPaused(true);
+            BigPlay.Visibility = Visibility.Collapsed;
+        }
+
+        UpdateSaveButtonState();
+        SaveProgress.IsActive = true;
+        SaveProgress.Visibility = Visibility.Visible;
+        AutomationProperties.SetName(SaveMediaButton, "Enregistrement du média en cours");
+        AutomationProperties.SetHelpText(
+            SaveMediaButton,
+            "Choisissez la destination du média source dans la boîte de dialogue.");
+
+        try
+        {
+            // La recherche d'heure exacte est déjà lancée : l'attendre brièvement permet
+            // d'enrichir les métadonnées sans bloquer l'enregistrement sur une lecture lente.
+            if (_captionTimeTask is { } captionTask)
+            {
+                try
+                {
+                    await Task.WhenAny(captionTask, Task.Delay(1200));
+                }
+                catch (Exception)
+                {
+                    // Une légende sans heure reste valide.
+                }
+            }
+
+            if (_closed)
+            {
+                return;
+            }
+
+            string? overlay = ResolvePath(AppState.Current.OverlayFor(card.Id));
+            if (overlay is not null && PathsEqual(main, overlay))
+            {
+                overlay = null;
+            }
+
+            string extension = StoryMediaSaver.GetSafeExtension(
+                main,
+                card.Kind == MediaKind.Video ? ".mp4" : ".jpg");
+            var picker = new FileSavePicker
+            {
+                SuggestedStartLocation = card.Kind == MediaKind.Video
+                    ? PickerLocationId.VideosLibrary
+                    : PickerLocationId.PicturesLibrary,
+                SuggestedFileName = BuildMediaFileName(card, itemNumber),
+                DefaultFileExtension = extension,
+            };
+            picker.FileTypeChoices.Add(
+                StoryMediaSaver.GetFileTypeLabel(extension),
+                new List<string> { extension });
+
+            if (App.MainWindow is null)
+            {
+                throw new InvalidOperationException(
+                    "La fenêtre principale n'est pas disponible pour ouvrir le sélecteur de fichiers.");
+            }
+
+            WinRT.Interop.InitializeWithWindow.Initialize(
+                picker,
+                WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+            Windows.Storage.StorageFile? file = await picker.PickSaveFileAsync();
+            if (file is null || string.IsNullOrWhiteSpace(file.Path) || _closed)
+            {
+                return;
+            }
+
+            var request = new StoryMediaSaveRequest(
+                main,
+                file.Path,
+                overlay,
+                card.Kind == MediaKind.Video ? "vidéo" : "photo",
+                AppState.Current.FormatDate(card),
+                _exactTimeLabel,
+                card.DatePrecision,
+                card.DateSource,
+                card.DateMeaning,
+                itemNumber,
+                itemCount,
+                AppState.Current.LibraryName,
+                card.SpaceName,
+                card.LocationLabel,
+                card.Width,
+                card.Height,
+                card.DurationMs,
+                card.Format);
+
+            StoryMediaSaveResult result = await StoryMediaSaver.SaveAsync(
+                request,
+                _savingMediaCts.Token);
+
+            if (_closed)
+            {
+                return;
+            }
+
+            string message =
+                $"Média enregistré :\n{result.MediaPath}\n" +
+                $"{StoryExportPreviewBuilder.FormatSize(result.MediaBytes)} · " +
+                $"SHA-256 {ShortHash(result.MediaSha256)}";
+            if (result.OverlayPath is not null)
+            {
+                message +=
+                    $"\n\nCalque enregistré séparément :\n{result.OverlayPath}\n" +
+                    $"{StoryExportPreviewBuilder.FormatSize(result.OverlayBytes ?? 0)} · " +
+                    $"SHA-256 {ShortHash(result.OverlaySha256 ?? string.Empty)}";
+            }
+
+            message +=
+                $"\n\nMétadonnées JSON :\n{result.MetadataPath}\n\n" +
+                "Aucun réencodage : le média est une copie exacte de la source.";
+
+            await ShowMessageAsync("Média enregistré", message);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_closed)
+            {
+                await ShowMessageAsync(
+                    "Enregistrement annulé",
+                    "Aucun fichier partiel n'a été conservé. La Story reste disponible.");
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            if (!_closed)
+            {
+                await ShowMessageAsync("Enregistrement impossible", ex.Message);
+            }
+        }
+        finally
+        {
+            _savingMedia = false;
+            SaveProgress.IsActive = false;
+            SaveProgress.Visibility = Visibility.Collapsed;
+            AutomationProperties.SetName(SaveMediaButton, "Enregistrer le média courant");
+            AutomationProperties.SetHelpText(
+                SaveMediaButton,
+                "Copie le média source tel quel, sans réencodage, avec un fichier JSON de métadonnées.");
+            _savingMediaCts?.Dispose();
+            _savingMediaCts = null;
+
+            if (!_closed)
+            {
+                UpdateSaveButtonState();
+
+                // On ne reprend la lecture que si la pause vient de l'enregistrement.
+                if (pausedBySave && _paused)
+                {
+                    SetPaused(false);
+                }
+            }
+        }
+    }
+
+    private string BuildMediaFileName(MemoryCard card, int itemNumber)
+    {
+        var parts = new List<string> { "memo" };
+        if (card.LocalDate is { } date)
+        {
+            parts.Add(date.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+        }
+
+        if (!string.IsNullOrEmpty(_exactTimeLabel))
+        {
+            parts.Add(_exactTimeLabel.Replace(":", string.Empty, StringComparison.Ordinal));
+        }
+
+        parts.Add(card.Kind == MediaKind.Video ? "video" : "photo");
+        parts.Add(itemNumber.ToString("00", CultureInfo.InvariantCulture));
+        return string.Join("-", parts);
+    }
+
+    private static string ShortHash(string hash) =>
+        string.IsNullOrEmpty(hash)
+            ? "—"
+            : hash.Length > 16
+                ? hash[..16] + "…"
+                : hash;
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left),
+                Path.GetFullPath(right),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return false;
+        }
+    }
+
+    private async void OnExport(object sender, RoutedEventArgs e)
+    {
+        if (_items.Count == 0 || _previewOpen || _exporting || _savingMedia || _closed)
+        {
+            return;
+        }
+
+        try
+        {
+            await OpenPreviewAsync();
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _previewOpen = false;
+            CancelPreviewAnalysis();
+            PreviewPanel.Visibility = Visibility.Collapsed;
+            PreviewBusy.IsActive = false;
+            _previewAnalyses = null;
+            _previewPlan = null;
+            RestorePlayback();
+            await ShowMessageAsync("Prévisualisation impossible", ex.Message);
+        }
     }
 
     private async Task OpenPreviewAsync()
@@ -706,8 +1393,16 @@ public sealed partial class StoryView : UserControl
             {
                 SuggestedStartLocation = PickerLocationId.VideosLibrary,
                 SuggestedFileName = $"memo-story-{DateTime.Now:yyyyMMdd-HHmm}",
+                DefaultFileExtension = ".mp4",
             };
             picker.FileTypeChoices.Add("Vidéo MP4", new List<string> { ".mp4" });
+
+            if (App.MainWindow is null)
+            {
+                throw new InvalidOperationException(
+                    "La fenêtre principale n'est pas disponible pour ouvrir le sélecteur de fichiers.");
+            }
+
             WinRT.Interop.InitializeWithWindow.Initialize(
                 picker,
                 WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
@@ -715,6 +1410,15 @@ public sealed partial class StoryView : UserControl
             var file = await picker.PickSaveFileAsync();
             if (file is null)
             {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(file.Path))
+            {
+                await ShowMessageAsync(
+                    "Export impossible",
+                    "Le fichier choisi n'expose pas de chemin local accessible à l'export. " +
+                    "Choisissez un dossier de ce disque.");
                 return;
             }
 
@@ -743,27 +1447,27 @@ public sealed partial class StoryView : UserControl
                     $"Vidéo créée : {result.OutputPath}\n" +
                     $"{StoryExportPreviewBuilder.FormatSize(result.SizeBytes)} · " +
                     $"{StoryExportPreviewBuilder.FormatDuration(result.Duration.TotalSeconds)}";
-                await ShowExportMessageAsync(
+                await ShowMessageAsync(
                     "Export terminé",
                     AppendWarnings(message, result.Warnings));
             }
             else if (result.Cancelled)
             {
-                await ShowExportMessageAsync(
+                await ShowMessageAsync(
                     "Export annulé",
                     "Aucun fichier final n'a été conservé. " +
                     "La sélection reste disponible pour un nouvel export.");
             }
             else
             {
-                await ShowExportMessageAsync(
+                await ShowMessageAsync(
                     "Export impossible",
                     AppendWarnings(result.ErrorMessage ?? "Erreur inconnue.", result.Warnings));
             }
         }
         catch (Exception ex)
         {
-            await ShowExportMessageAsync("Export impossible", ex.Message);
+            await ShowMessageAsync("Export impossible", ex.Message);
         }
         finally
         {
@@ -784,6 +1488,10 @@ public sealed partial class StoryView : UserControl
                 // Le sélecteur ou son initialisation a échoué : la prévisualisation reste
                 // ouverte et l'utilisateur peut réessayer.
                 PreviewExportButton.IsEnabled = _previewPlan?.CanExport == true;
+                if (PreviewExportButton.IsEnabled)
+                {
+                    PreviewExportButton.Focus(FocusState.Programmatic);
+                }
             }
 
             _exportCts?.Dispose();
@@ -858,7 +1566,7 @@ public sealed partial class StoryView : UserControl
         return $"{message}\n\n{suffix}";
     }
 
-    private async Task ShowExportMessageAsync(string title, string message)
+    private async Task ShowMessageAsync(string title, string message)
     {
         var dialog = new ContentDialog
         {
@@ -871,6 +1579,7 @@ public sealed partial class StoryView : UserControl
                 MaxWidth = 520,
             },
             CloseButtonText = "Fermer",
+            RequestedTheme = ElementTheme.Dark,
             XamlRoot = XamlRoot,
         };
         await dialog.ShowAsync();
@@ -878,8 +1587,9 @@ public sealed partial class StoryView : UserControl
 
     private void Next()
     {
-        // Une fin de vidéo ne doit pas changer la sélection pendant l'aperçu ou l'export.
-        if (_previewOpen || _exporting)
+        // Une fin de vidéo ne doit pas changer la sélection pendant l'aperçu, l'export
+        // ou une copie de média en cours.
+        if (_previewOpen || _exporting || _savingMedia)
         {
             return;
         }
@@ -895,7 +1605,7 @@ public sealed partial class StoryView : UserControl
 
     private void Previous()
     {
-        if (_previewOpen || _exporting || _index == 0)
+        if (_previewOpen || _exporting || _savingMedia || _index == 0)
         {
             return;
         }
@@ -907,13 +1617,22 @@ public sealed partial class StoryView : UserControl
     private void OnPrevious(object sender, RoutedEventArgs e) => Previous();
     private void OnPlayPause(object sender, RoutedEventArgs e) => TogglePause();
 
-    private void TogglePause() => SetPaused(!_paused);
+    private void TogglePause()
+    {
+        if (_savingMedia)
+        {
+            return;
+        }
+
+        SetPaused(!_paused);
+    }
 
     private void SetPaused(bool paused)
     {
         if (_paused == paused)
         {
             UpdatePlayIcon();
+            UpdateTimeReadout();
             BigPlay.Visibility = _paused ? Visibility.Visible : Visibility.Collapsed;
             return;
         }
@@ -946,6 +1665,7 @@ public sealed partial class StoryView : UserControl
         }
 
         UpdatePlayIcon();
+        UpdateTimeReadout();
         BigPlay.Visibility = _paused ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -980,24 +1700,15 @@ public sealed partial class StoryView : UserControl
     private void UpdatePlayIcon()
     {
         PlayIcon.Glyph = _paused ? "\uE768" : "\uE769";
+        AutomationProperties.SetName(
+            PlayButton,
+            _paused ? "Reprendre la lecture" : "Mettre en pause");
+        ToolTipService.SetToolTip(
+            PlayButton,
+            _paused ? "Reprendre la lecture (espace)" : "Mettre en pause (espace)");
     }
 
-    private void OnToggleOverlay(object sender, RoutedEventArgs e)
-    {
-        _overlayVisible = !_overlayVisible;
-        Stage.SetOverlayVisible(_overlayVisible);
-    }
-
-    private void OnToggleMute(object sender, RoutedEventArgs e)
-    {
-        _muted = !_muted;
-        Stage.Mute = _muted;
-        MuteIcon.Glyph = _muted ? "\uE74F" : "\uE767";
-        MuteButton.Opacity = _muted ? 0.55 : 1;
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
-            MuteButton,
-            _muted ? "Rétablir le son" : "Couper le son");
-    }
+    private void OnToggleMute(object sender, RoutedEventArgs e) => SetMuted(!_muted);
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
 
@@ -1015,6 +1726,9 @@ public sealed partial class StoryView : UserControl
             return;
         }
 
+        _closed = true;
+        _savingMediaCts?.Cancel();
+        CancelCaptionTimeLookup();
         _timer?.Stop();
         Stage.StopVideo();
         Stage.Clear();
@@ -1063,7 +1777,7 @@ public sealed partial class StoryView : UserControl
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.O:
-                OnToggleOverlay(this, new RoutedEventArgs());
+                ToggleOverlay();
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.M:

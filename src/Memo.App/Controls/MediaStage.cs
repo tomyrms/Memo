@@ -33,6 +33,11 @@ public sealed class MediaStage : UserControl
     private bool _invalidateQueued;
     private bool _disposed;
 
+    // Le volume et le mode muet appartiennent à la scène, pas au lecteur natif :
+    // ils survivent donc à la destruction ou au remplacement du MediaPlayer.
+    private int _volume = 100;
+    private bool _mute;
+
     public event EventHandler? Ended;
 
     public MediaStage()
@@ -44,11 +49,35 @@ public sealed class MediaStage : UserControl
     }
 
     public bool IsVideo => _player is not null && _media is not null;
+
+    /// <summary>État muet conservé même lorsqu'aucune vidéo n'est chargée.</summary>
     public bool Mute
     {
-        get => _player?.Mute ?? false;
-        set { if (_player is not null) _player.Mute = value; }
+        get => _mute;
+        set
+        {
+            _mute = value;
+            if (_player is not null)
+            {
+                _player.Mute = value;
+            }
+        }
     }
+
+    /// <summary>Volume de lecture de 0 à 100, appliqué au prochain lecteur créé.</summary>
+    public int Volume
+    {
+        get => _volume;
+        set
+        {
+            _volume = Math.Clamp(value, 0, 100);
+            if (_player is not null)
+            {
+                _player.Volume = _volume;
+            }
+        }
+    }
+
     public bool IsPlaying => _player?.IsPlaying == true;
     public long LengthMs => _player?.Length ?? 0;
     public double Position => _player is null || _player.Length <= 0 ? 0 : Math.Clamp((double)_player.Time / _player.Length, 0, 1);
@@ -148,7 +177,9 @@ public sealed class MediaStage : UserControl
 
         LibVLCSharp.Shared.Core.Initialize();
         _libVlc = new LibVLC("--no-video-title-show", "--quiet", "--avcodec-hw=none");
-        _player = new MediaPlayer(_libVlc) { Volume = 100, Mute = false };
+        _player = new MediaPlayer(_libVlc);
+        _player.Volume = _volume;
+        _player.Mute = _mute;
         _player.EndReached += OnEndReached;
         _player.SetVideoFormatCallbacks(
             new MediaPlayer.LibVLCVideoFormatCb(OnFormat),
