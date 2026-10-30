@@ -919,6 +919,9 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
+        // Une analyse est une opération longue : elle prend le verrou de la
+        // bibliothèque pour ne pas écrire pendant un import ou une restauration.
+        using var analysisLease = AppState.Current.AcquireAnalysisLease();
         _analysisCts = new CancellationTokenSource();
         SetAnalysisButtonsEnabled(false);
         AnalysisProgress.Visibility = Visibility.Visible;
