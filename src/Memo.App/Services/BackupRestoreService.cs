@@ -17,7 +17,7 @@ internal static class BackupRestoreService
     public static async Task RestoreAsync(
         string backupZip,
         string destinationRoot,
-        IProgress<string>? progress = null,
+        IProgress<BackupProgress>? progress = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(backupZip))
@@ -44,7 +44,7 @@ internal static class BackupRestoreService
 
             // La sauvegarde est extraite et vérifiée dans un dossier frère de la
             // destination ; un échec ne modifie donc pas la bibliothèque en cours.
-            await host.Backup.RestoreAsync(backupZip, destinationRoot, progress, ct);
+            await host.Backup.RestoreWithProgressAsync(backupZip, destinationRoot, progress, ct);
         }
         finally
         {

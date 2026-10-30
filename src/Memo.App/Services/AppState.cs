@@ -6,6 +6,17 @@ using Memo.Media;
 namespace Memo.App.Services;
 
 /// <summary>
+/// Avancement de la reconstruction des miniatures manquantes. <see cref="Total"/>
+/// vaut 0 tant que le nombre de cartes à traiter n'est pas connu.
+/// </summary>
+public sealed record ThumbnailGenerationInfo(
+    bool IsRunning,
+    int Done,
+    int Total,
+    string Message,
+    bool Failed = false);
+
+/// <summary>
 /// État applicatif partagé. Une bibliothèque réelle (Memo.Core) remplace le
 /// jeu de démonstration dès qu'elle est ouverte ; les pages ne changent pas.
 /// </summary>
@@ -29,11 +40,17 @@ public sealed class AppState
 
     public event EventHandler? LibraryChanged;
 
+    /// <summary>Progression de la reconstruction des miniatures ; levé sur le thread UI.</summary>
+    public event EventHandler<ThumbnailGenerationInfo>? ThumbnailGenerationChanged;
+
+    public ThumbnailGenerationInfo ThumbnailGeneration { get; private set; } = new(false, 0, 0, string.Empty);
+
     private readonly Dictionary<long, string> _demoThumbnails = new();
     private readonly Dictionary<long, string> _demoMedia = new();
     private readonly Dictionary<long, string> _demoOverlays = new();
-    // Récapitulatifs de démonstration conservés en mémoire, dans l'ordre enregistré.
+    // Récapitulatifs et albums de démonstration conservés en mémoire, dans l'ordre enregistré.
     private readonly Dictionary<long, List<long>> _demoRecapItems = new();
+    private readonly Dictionary<long, List<long>> _demoAlbumItems = new();
 
     // Index id -> position dans Cards, entretenu avec la collection pour que
     // les mises à jour incrémentales restent en O(1) par souvenir.
@@ -42,6 +59,13 @@ public sealed class AppState
     // Sérialise les changements de bibliothèque (ouverture, création, fermeture)
     // afin que deux bascules concurrentes ne puissent pas s'entrelacer.
     private readonly SemaphoreSlim _libraryGate = new(1, 1);
+
+    // Reconstruction des miniatures lancée en arrière-plan après l'ouverture
+    // d'une bibliothèque (notamment après restauration, où derived/ est absent).
+    private CancellationTokenSource? _thumbnailsCts;
+    // Import et ouverture peuvent demander la reconstruction en même temps :
+    // un seul lot écrit dans derived/thumbs à la fois.
+    private readonly SemaphoreSlim _thumbnailsGate = new(1, 1);
 
     // Jeton de génération : toute opération asynchrone capture la bibliothèque
     // et cette valeur, puis vérifie qu'elles sont toujours courantes avant
@@ -56,6 +80,8 @@ public sealed class AppState
     {
         // Invalide les opérations encore en vol sur une éventuelle bibliothèque.
         _libraryEpoch++;
+        CancelThumbnailGeneration();
+        PublishThumbnailState(new ThumbnailGenerationInfo(false, 0, 0, string.Empty));
         Library = null;
         LibraryPath = null;
         LibraryName = "Bibliothèque de démonstration";
@@ -65,6 +91,7 @@ public sealed class AppState
         _demoMedia.Clear();
         _demoOverlays.Clear();
         _demoRecapItems.Clear();
+        _demoAlbumItems.Clear();
 
         ReplaceAllCards(DemoData.CreateCards());
         Reset(Albums, Array.Empty<CollectionInfo>());
@@ -73,6 +100,8 @@ public sealed class AppState
         foreach (var album in DemoData.CreateAlbums())
         {
             Albums.Add(album);
+            // L'ordre de démonstration devient modifiable comme celui d'une vraie bibliothèque.
+            _demoAlbumItems[album.Id] = DemoData.AlbumMembers(album.Id).ToList();
         }
         Settings = new AppSettings("Europe/Zurich", 4, true, true, false, false, "09:00", true, true, "System", false, false);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
@@ -137,6 +166,10 @@ public sealed class AppState
                 await previous.DisposeAsync();
             }
             LibraryChanged?.Invoke(this, EventArgs.Empty);
+
+            // Après une restauration (ou toute ouverture), les miniatures
+            // absentes sont reconstruites en arrière-plan sans bloquer la navigation.
+            StartThumbnailGeneration(Library!, _libraryEpoch);
         }
         finally
         {
@@ -223,6 +256,22 @@ public sealed class AppState
         ImportCounters? counters = null,
         CancellationToken ct = default)
     {
+        await _thumbnailsGate.WaitAsync(ct);
+        try
+        {
+            await GenerateMissingThumbnailsCoreAsync(progress, counters, ct);
+        }
+        finally
+        {
+            _thumbnailsGate.Release();
+        }
+    }
+
+    private async Task GenerateMissingThumbnailsCoreAsync(
+        IProgress<ImportProgress>? progress,
+        ImportCounters? counters,
+        CancellationToken ct)
+    {
         var library = Library;
         if (library is null)
         {
@@ -240,9 +289,21 @@ public sealed class AppState
         var missing = cards
             .Where(c => !c.HasThumbnail && c.MainAssetId is long)
             .ToList();
+        if (missing.Count == 0)
+        {
+            return;
+        }
+
         var done = 0;
         var thumbsDirectory = Path.Combine(library.Info.RootPath, "derived", "thumbs");
         Directory.CreateDirectory(thumbsDirectory);
+        progress?.Report(new ImportProgress(
+            ImportPhase.Analyzing,
+            "Préparation des miniatures",
+            0,
+            missing.Count,
+            null,
+            counters ?? ImportCounters.Empty));
 
         foreach (var card in missing)
         {
@@ -261,6 +322,16 @@ public sealed class AppState
             var source = library.Catalog.GetAssetPath(assetId);
             if (!File.Exists(source))
             {
+                // La source a disparu : compter la carte comme traitée pour que
+                // la progression atteigne bien son total, sans écrire de miniature.
+                done++;
+                progress?.Report(new ImportProgress(
+                    ImportPhase.Analyzing,
+                    "Préparation des miniatures",
+                    done,
+                    missing.Count,
+                    null,
+                    counters ?? ImportCounters.Empty));
                 continue;
             }
 
@@ -296,6 +367,114 @@ public sealed class AppState
                 null,
                 counters ?? ImportCounters.Empty));
         }
+    }
+
+    /// <summary>
+    /// Demande l'arrêt de la reconstruction des miniatures. Le fichier déjà
+    /// écrit reste valide ; les cartes suivantes ne sont pas traitées.
+    /// </summary>
+    public void CancelThumbnailGeneration() => _thumbnailsCts?.Cancel();
+
+    /// <summary>
+    /// Relance la reconstruction des miniatures manquantes pour la bibliothèque
+    /// courante, par exemple après une annulation ou une erreur de décodage.
+    /// </summary>
+    public void RetryThumbnailGeneration()
+    {
+        var library = Library;
+        if (library is not null)
+        {
+            StartThumbnailGeneration(library, _libraryEpoch);
+        }
+    }
+
+    /// <summary>
+    /// Lance la reconstruction sans attendre : l'ouverture de la bibliothèque
+    /// reste immédiate et la page peut continuer à naviguer.
+    /// </summary>
+    private void StartThumbnailGeneration(MemoLibrary library, int epoch)
+    {
+        CancelThumbnailGeneration();
+        var cts = new CancellationTokenSource();
+        _thumbnailsCts = cts;
+        PublishThumbnailState(new ThumbnailGenerationInfo(
+            true, 0, 0, "Recherche des miniatures manquantes…"));
+        _ = RunThumbnailGenerationAsync(library, epoch, cts);
+    }
+
+    private async Task RunThumbnailGenerationAsync(
+        MemoLibrary library,
+        int epoch,
+        CancellationTokenSource cts)
+    {
+        try
+        {
+            // Rapport synchrone : la progression est exacte quand la boucle se
+            // termine, sans dépendre du moment où l'UI traite la file.
+            var progress = new DelegateProgress<ImportProgress>(p =>
+                PublishThumbnailState(new ThumbnailGenerationInfo(
+                    true,
+                    p.FilesProcessed,
+                    p.FilesTotal,
+                    p.Message)));
+            await GenerateMissingThumbnailsAsync(progress, null, cts.Token);
+            if (!IsCurrent(library, epoch))
+            {
+                return;
+            }
+
+            var state = ThumbnailGeneration;
+            PublishThumbnailState(new ThumbnailGenerationInfo(
+                false,
+                state.Done,
+                state.Total,
+                state.Total > 0 ? "Aperçus reconstruits." : "Aucun aperçu manquant."));
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            if (IsCurrent(library, epoch))
+            {
+                var state = ThumbnailGeneration;
+                PublishThumbnailState(new ThumbnailGenerationInfo(
+                    false,
+                    state.Done,
+                    state.Total,
+                    "Reconstruction des aperçus annulée."));
+            }
+        }
+        catch (Exception ex)
+        {
+            // Une erreur d'aperçu ne doit jamais invalider la bibliothèque ouverte.
+            if (IsCurrent(library, epoch))
+            {
+                var state = ThumbnailGeneration;
+                PublishThumbnailState(new ThumbnailGenerationInfo(
+                    false,
+                    state.Done,
+                    state.Total,
+                    "Reconstruction des aperçus interrompue : " + ex.Message,
+                    Failed: true));
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_thumbnailsCts, cts))
+            {
+                _thumbnailsCts = null;
+            }
+            cts.Dispose();
+        }
+    }
+
+    private void PublishThumbnailState(ThumbnailGenerationInfo state)
+    {
+        ThumbnailGeneration = state;
+        ThumbnailGenerationChanged?.Invoke(this, state);
+    }
+
+    private sealed class DelegateProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     /// <summary>Applique un favori à plusieurs souvenirs en une seule écriture.</summary>
@@ -417,6 +596,7 @@ public sealed class AppState
         {
             var id = Albums.Count == 0 ? 1 : Albums.Max(a => a.Id) + 1;
             Albums.Add(new CollectionInfo(id, name, CollectionKind.Album, DateTimeOffset.Now, 0, null, null, null));
+            _demoAlbumItems[id] = new List<long>();
             return;
         }
 
@@ -451,6 +631,8 @@ public sealed class AppState
             return;
         }
 
+        // Le renommage peut changer la position alphabétique : retirer puis
+        // réinsérer conserve l'identifiant, donc la sélection de la page.
         var album = Albums.FirstOrDefault(a => a.Id == albumId);
         if (album is not null)
         {
@@ -469,6 +651,7 @@ public sealed class AppState
             {
                 Albums.Remove(album);
             }
+            _demoAlbumItems.Remove(albumId);
             return;
         }
 
@@ -486,11 +669,32 @@ public sealed class AppState
         }
     }
 
+    /// <summary>
+    /// Ajoute des souvenirs à la fin de l'album, sans toucher aux fichiers
+    /// sources : seule la table de liaison de la collection est modifiée.
+    /// </summary>
     public async Task AddToAlbumAsync(long albumId, IReadOnlyList<long> memoryIds, CancellationToken ct = default)
     {
+        if (memoryIds.Count == 0)
+        {
+            return;
+        }
+
         var library = Library;
         if (library is null)
         {
+            if (!_demoAlbumItems.TryGetValue(albumId, out var items))
+            {
+                return;
+            }
+            foreach (var memoryId in memoryIds.Distinct())
+            {
+                if (Cards.Any(c => c.Id == memoryId) && !items.Contains(memoryId))
+                {
+                    items.Add(memoryId);
+                }
+            }
+            RefreshDemoAlbum(albumId);
             return;
         }
 
@@ -506,13 +710,99 @@ public sealed class AppState
         await RefreshCollectionsAsync(library, epoch, ct);
     }
 
+    /// <summary>
+    /// Retire des souvenirs d'un album. Les souvenirs, leurs dates et leurs
+    /// médias restent intacts dans la bibliothèque.
+    /// </summary>
+    public async Task RemoveFromAlbumAsync(long albumId, IReadOnlyList<long> memoryIds, CancellationToken ct = default)
+    {
+        if (memoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var library = Library;
+        if (library is null)
+        {
+            if (!_demoAlbumItems.TryGetValue(albumId, out var items))
+            {
+                return;
+            }
+            var removals = memoryIds.ToHashSet();
+            items.RemoveAll(removals.Contains);
+            RefreshDemoAlbum(albumId);
+            return;
+        }
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.RemoveFromCollectionAsync(albumId, memoryIds, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+        await RefreshCollectionsAsync(library, epoch, ct);
+    }
+
+    /// <summary>
+    /// Enregistre l'ordre de lecture de l'album. L'ordre est persistant et suit
+    /// la grille ainsi que la Story.
+    /// </summary>
+    public async Task ReorderAlbumAsync(
+        long albumId,
+        IReadOnlyList<long> orderedMemoryIds,
+        CancellationToken ct = default)
+    {
+        if (orderedMemoryIds.Count == 0)
+        {
+            return;
+        }
+
+        var library = Library;
+        if (library is null)
+        {
+            if (!_demoAlbumItems.TryGetValue(albumId, out var items))
+            {
+                return;
+            }
+
+            var ordered = orderedMemoryIds.Distinct().ToList();
+            var orderedSet = ordered.ToHashSet();
+            // Les identifiants absents de la nouvelle liste restent à la fin,
+            // dans leur ordre précédent, pour ne jamais perdre un membre.
+            var reordered = ordered.Where(id => items.Contains(id)).ToList();
+            reordered.AddRange(items.Where(id => !orderedSet.Contains(id)));
+            items.Clear();
+            items.AddRange(reordered);
+            RefreshDemoAlbum(albumId);
+            return;
+        }
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.ReorderCollectionAsync(albumId, orderedMemoryIds, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        // La couverture est le premier souvenir : les métadonnées de la
+        // collection doivent être relues après un réordonnancement.
+        await RefreshCollectionsAsync(library, epoch, ct);
+    }
+
     public async Task<IReadOnlyList<MemoryCard>> GetAlbumItemsAsync(long albumId, CancellationToken ct = default)
     {
         var library = Library;
         if (library is null)
         {
-            // Un récapitulatif de démonstration conserve son propre ordre ; les albums
-            // historiques gardent l'ordre chronologique de la bibliothèque.
+            // Un album ou un récapitulatif de démonstration conserve son propre
+            // ordre ; les albums historiques gardent l'ordre chronologique.
+            if (_demoAlbumItems.TryGetValue(albumId, out var albumIds))
+            {
+                return albumIds
+                    .Select(id => Cards.FirstOrDefault(c => c.Id == id))
+                    .OfType<MemoryCard>()
+                    .ToList();
+            }
             if (_demoRecapItems.TryGetValue(albumId, out var recapIds))
             {
                 return recapIds
@@ -524,6 +814,42 @@ public sealed class AppState
             return Cards.Where(c => ids.Contains(c.Id)).ToList();
         }
         return await library.Catalog.GetCollectionItemsAsync(albumId, ct);
+    }
+
+    /// <summary>
+    /// Recalcule les métadonnées visibles d'un album de démonstration après
+    /// une modification de son contenu.
+    /// </summary>
+    private void RefreshDemoAlbum(long albumId)
+    {
+        var index = -1;
+        for (var i = 0; i < Albums.Count; i++)
+        {
+            if (Albums[i].Id == albumId)
+            {
+                index = i;
+                break;
+            }
+        }
+        if (index < 0)
+        {
+            return;
+        }
+
+        var existing = Albums[index];
+        var cards = (_demoAlbumItems.GetValueOrDefault(albumId) ?? new List<long>())
+            .Select(CardById)
+            .OfType<MemoryCard>()
+            .ToList();
+        var dates = cards.Where(c => c.LocalDate is not null).Select(c => c.LocalDate!.Value).ToList();
+        var cover = cards.Count > 0 ? _demoThumbnails.GetValueOrDefault(cards[0].Id) : null;
+        Albums[index] = existing with
+        {
+            ItemCount = cards.Count,
+            CoverThumbnail = cover,
+            FirstDate = dates.Count > 0 ? dates.Min() : null,
+            LastDate = dates.Count > 0 ? dates.Max() : null
+        };
     }
 
     public async Task<IReadOnlyList<MemoryCard>> SearchAsync(string query, CancellationToken ct = default)
@@ -682,11 +1008,14 @@ public sealed class AppState
         await ReloadAsync(ct);
     }
 
-    public async Task<string> BackupAsync(string destinationZip, IProgress<string>? progress = null, CancellationToken ct = default)
+    public async Task<string> BackupAsync(
+        string destinationZip,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken ct = default)
     {
         var library = Library
             ?? throw new InvalidOperationException("Ouvrez une bibliothèque avant de la sauvegarder.");
-        var result = await library.Backup.CreateBackupAsync(destinationZip, progress, ct);
+        var result = await library.Backup.CreateBackupWithProgressAsync(destinationZip, progress, ct);
         return result.Path;
     }
 
@@ -694,7 +1023,11 @@ public sealed class AppState
     /// Restaure une sauvegarde dans un dossier neuf. Ne dépend pas de la
     /// bibliothèque ouverte : le premier lancement peut donc restaurer.
     /// </summary>
-    public Task RestoreAsync(string zipPath, string destinationRoot, IProgress<string>? progress = null, CancellationToken ct = default)
+    public Task RestoreAsync(
+        string zipPath,
+        string destinationRoot,
+        IProgress<BackupProgress>? progress = null,
+        CancellationToken ct = default)
         => BackupRestoreService.RestoreAsync(zipPath, destinationRoot, progress, ct);
 
     public string? ThumbnailFor(long memoryId)

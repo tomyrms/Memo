@@ -7,11 +7,32 @@
     NavigationCacheMode="Required">
     <Page.Resources>
         <converters:CountToLabelConverter x:Key="CountLabel" />
+
+        <!-- Sélection multiple à l'ajout : liste compacte, lisible au clavier. -->
+        <DataTemplate x:Key="AlbumCandidateTemplate">
+            <Grid ColumnSpacing="12" Padding="0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="150" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Text="{Binding DateLabel}"
+                    Style="{StaticResource MemoSecondaryTextStyle}"
+                    TextTrimming="CharacterEllipsis" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding DetailLabel}"
+                    Style="{StaticResource MemoBodyTextStyle}"
+                    TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </DataTemplate>
     </Page.Resources>
+
     <Grid Padding="32,24,32,32" RowSpacing="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid>
@@ -75,8 +96,10 @@
             <Grid x:Name="AlbumContent" Grid.Column="1" RowSpacing="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
+
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -90,27 +113,75 @@
                         <TextBlock
                             x:Name="AlbumMeta"
                             Style="{StaticResource MemoSecondaryTextStyle}" />
+                        <TextBlock
+                            x:Name="AlbumOrderHint"
+                            Style="{StaticResource MemoCaptionTextStyle}"
+                            Visibility="Collapsed"
+                            TextWrapping="Wrap"
+                            Text="La couverture suit le premier souvenir de l’album dès qu’un aperçu existe. Réordonnez avec le menu d’une tuile (clic droit ou touche Menu) ou Ctrl+↑ / Ctrl+↓ ; l’ordre est aussi celui de la lecture." />
                     </StackPanel>
                     <StackPanel
                         x:Name="AlbumActions"
                         Grid.Column="1"
                         Orientation="Horizontal"
-                        Spacing="4">
+                        Spacing="4"
+                        VerticalAlignment="Top">
                         <Button Click="OnPlay" Content="Lire" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        <Button Click="OnAdd" Content="Ajouter" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        <Button
+                            x:Name="SelectModeButton"
+                            Click="OnToggleSelectionMode"
+                            Content="Sélectionner"
+                            Style="{StaticResource MemoQuietButtonStyle}" />
                         <Button Click="OnRename" Content="Renommer" Style="{StaticResource MemoQuietButtonStyle}" />
                         <Button Click="OnDelete" Content="Supprimer" Style="{StaticResource MemoQuietButtonStyle}" />
                     </StackPanel>
                 </Grid>
 
+                <StackPanel
+                    x:Name="SelectionBar"
+                    Grid.Row="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Visibility="Collapsed">
+                    <TextBlock
+                        x:Name="SelectionCount"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource MemoSecondaryTextStyle}"
+                        Text="0 sélectionné" />
+                    <Button
+                        Click="OnRemoveSelected"
+                        Content="Retirer de l’album"
+                        Style="{StaticResource MemoQuietButtonStyle}" />
+                    <Button
+                        Click="OnClearSelection"
+                        Content="Tout désélectionner"
+                        Style="{StaticResource MemoQuietButtonStyle}" />
+                </StackPanel>
+
                 <GridView
                     x:Name="Grid"
-                    Grid.Row="1"
+                    Grid.Row="2"
                     IsItemClickEnabled="True"
                     ItemClick="OnItemClick"
-                    SelectionMode="None">
+                    SelectionChanged="OnSelectionChanged"
+                    SelectionMode="Single">
+                    <GridView.KeyboardAccelerators>
+                        <KeyboardAccelerator
+                            Key="Up"
+                            Modifiers="Control"
+                            Invoked="OnMoveUpAccelerator" />
+                        <KeyboardAccelerator
+                            Key="Down"
+                            Modifiers="Control"
+                            Invoked="OnMoveDownAccelerator" />
+                        <KeyboardAccelerator Key="Delete" Invoked="OnRemoveAccelerator" />
+                    </GridView.KeyboardAccelerators>
                     <GridView.ItemTemplate>
                         <DataTemplate>
-                            <controls:MemoryTile Card="{Binding}" ShowDate="True" />
+                            <Grid ContextRequested="OnTileContextRequested">
+                                <controls:MemoryTile Card="{Binding}" ShowDate="True" />
+                            </Grid>
                         </DataTemplate>
                     </GridView.ItemTemplate>
                     <GridView.ItemContainerStyle>
@@ -125,7 +196,7 @@
 
                 <StackPanel
                     x:Name="Empty"
-                    Grid.Row="1"
+                    Grid.Row="2"
                     MaxWidth="460"
                     HorizontalAlignment="Left"
                     VerticalAlignment="Top"
@@ -134,17 +205,22 @@
                     <TextBlock Text="Cet album est vide" Style="{StaticResource MemoSubtitleTextStyle}" />
                     <TextBlock
                         Style="{StaticResource MemoSecondaryTextStyle}"
-                        Text="Ajoutez des souvenirs depuis la bibliothèque avec le bouton Sélectionner." />
-                    <Button
-                        Click="OnGoLibrary"
-                        Content="Ouvrir la bibliothèque"
-                        HorizontalAlignment="Left"
-                        Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        Text="Ajoutez des souvenirs avec le bouton Ajouter. Ils restent dans la bibliothèque : l’album ne fait que les référencer." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            Click="OnAdd"
+                            Content="Ajouter des souvenirs"
+                            Style="{StaticResource MemoPrimaryButtonStyle}" />
+                        <Button
+                            Click="OnGoLibrary"
+                            Content="Ouvrir la bibliothèque"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </StackPanel>
                 </StackPanel>
 
                 <StackPanel
                     x:Name="NoAlbums"
-                    Grid.Row="1"
+                    Grid.Row="2"
                     MaxWidth="460"
                     HorizontalAlignment="Left"
                     VerticalAlignment="Top"
@@ -153,7 +229,7 @@
                     <TextBlock Text="Aucun album pour l’instant" Style="{StaticResource MemoSubtitleTextStyle}" />
                     <TextBlock
                         Style="{StaticResource MemoSecondaryTextStyle}"
-                        Text="Un album est une collection locale : les fichiers sources ne sont ni déplacés ni renommés. Créez-en un, puis ajoutez des souvenirs depuis la bibliothèque." />
+                        Text="Un album est une collection locale : les fichiers sources ne sont ni déplacés ni renommés. Créez-en un, puis ajoutez des souvenirs depuis cet écran ou depuis la bibliothèque." />
                     <Button
                         Click="OnCreate"
                         Content="Créer un album"
@@ -162,7 +238,11 @@
                 </StackPanel>
             </Grid>
         </Grid>
+
+        <InfoBar
+            x:Name="Notice"
+            Grid.Row="2"
+            IsClosable="True"
+            IsOpen="False" />
     </Grid>
 </Page>
-
-
