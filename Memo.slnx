@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Memo.App/Memo.App.csproj" />
+    <Project Path="src/Memo.Core/Memo.Core.csproj" />
+    <Project Path="src/Memo.Media/Memo.Media.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Memo.Core.Tests/Memo.Core.Tests.csproj" />
+    <Project Path="tests/Memo.Media.Tests/Memo.Media.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Memo.Corpus/Memo.Corpus.csproj" />
+  </Folder>
+</Solution>
