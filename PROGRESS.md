@@ -37,6 +37,7 @@ Application WinUI 3 fonctionnelle sur bibliothèque réelle : import multi-ZIP e
 - `dotnet test Memo.slnx -c Release` : Core 61/61, Media 69/69, Intégration 12/12.
 - Build Release : 0 erreur.
 - Import réel : 838 souvenirs (22 synthétiques + 816 du premier ZIP), 477 sans date et 287 calques en attente des autres parties.
+- Import des 17 ZIP réels relancé sur `X:` : fenêtre réactive pendant l'inventaire et la copie, progression par archive, plusieurs gigaoctets copiés sans gel de l'interface.
 - Application lancée sur la bibliothèque réelle, accueil et lecteur vérifiés à l'écran.
 - Analyse locale sur la bibliothèque : 13 OCR, 13 empreintes, 5,7 s.
 - Sauvegarde → restauration : 23 souvenirs retrouvés ; hash modifié et média supprimé rejetés.
