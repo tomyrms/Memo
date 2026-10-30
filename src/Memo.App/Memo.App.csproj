@@ -13,6 +13,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <Platforms>x64</Platforms>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <EnableMsixTooling>false</EnableMsixTooling>
@@ -25,6 +26,7 @@
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4948" />
     <PackageReference Include="LibVLCSharp.WinUI" Version="3.10.2" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="SkiaSharp.Views.WinUI" Version="4.154.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Memo.Core\Memo.Core.csproj" />
@@ -34,3 +36,4 @@
     <Content Include="Assets\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
+

@@ -7,6 +7,7 @@
         <NavigationView
             x:Name="Nav"
             IsBackButtonVisible="Collapsed"
+            IsPaneOpen="True"
             IsSettingsVisible="False"
             OpenPaneLength="240"
             CompactPaneLength="48"
@@ -122,4 +123,5 @@
         </NavigationView>
     </Grid>
 </UserControl>
+
 

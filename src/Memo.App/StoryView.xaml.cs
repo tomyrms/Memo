@@ -1,12 +1,10 @@
-using LibVLCSharp.Shared;
-using Microsoft.UI.Dispatching;
 using Memo.App.Services;
 using Memo.Core;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
-using Microsoft.UI.Xaml.Shapes;
 
 namespace Memo.App;
 
@@ -19,10 +17,6 @@ public sealed partial class StoryView : UserControl
     private bool _paused;
     private bool _muted;
     private bool _overlayVisible = true;
-    private bool _initialized;
-    private LibVLC? _libVlc;
-    private MediaPlayer? _player;
-    private Media? _media;
     private DispatcherQueueTimer? _timer;
     private DateTimeOffset _photoStarted;
     private TimeSpan _photoElapsed;
@@ -33,13 +27,14 @@ public sealed partial class StoryView : UserControl
     public StoryView()
     {
         InitializeComponent();
-        Unloaded += (_, _) => DisposePlayer();
+        Stage.Ended += (_, _) => Next();
     }
 
     public void Start(IReadOnlyList<MemoryCard> items, int index)
     {
         _items = items;
         _index = Math.Clamp(index, 0, items.Count - 1);
+        _paused = false;
         BuildProgress();
         Focus(FocusState.Programmatic);
         ShowCurrent();
@@ -54,8 +49,8 @@ public sealed partial class StoryView : UserControl
         for (var i = 0; i < _items.Count; i++)
         {
             ProgressPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var seg = new Grid { Height = 3, Margin = new Thickness(0, 0, 4, 0) };
-            seg.Children.Add(new Border
+            var segment = new Grid { Height = 3, Margin = new Thickness(0, 0, 4, 0) };
+            segment.Children.Add(new Border
             {
                 Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(80, 255, 255, 255)),
                 CornerRadius = new CornerRadius(2)
@@ -67,11 +62,11 @@ public sealed partial class StoryView : UserControl
                 Width = 0,
                 CornerRadius = new CornerRadius(2)
             };
-            seg.Children.Add(fill);
-            seg.SizeChanged += (_, _) => UpdateProgress();
-            Grid.SetColumn(seg, i);
-            ProgressPanel.Children.Add(seg);
-            _segments.Add(seg);
+            segment.Children.Add(fill);
+            segment.SizeChanged += (_, _) => UpdateProgress();
+            Grid.SetColumn(segment, i);
+            ProgressPanel.Children.Add(segment);
+            _segments.Add(segment);
             _fills.Add(fill);
         }
     }
@@ -89,31 +84,42 @@ public sealed partial class StoryView : UserControl
         CaptionTitle.Text = AppState.Current.FormatDate(card);
         CaptionSubtitle.Text = BuildSubtitle(card);
         _overlayVisible = true;
-        OverlayButton.IsEnabled = AppState.Current.OverlayFor(card.Id) is not null;
 
-        StopVideo();
+        var overlayPath = AppState.Current.OverlayFor(card.Id);
+        Stage.SetOverlay(ResolvePath(overlayPath));
+        Stage.SetOverlayVisible(true);
+        OverlayButton.IsEnabled = overlayPath is not null;
+
+        _paused = false;
         _photoElapsed = TimeSpan.Zero;
         _photoStarted = DateTimeOffset.Now;
         _photoDuration = TimeSpan.FromSeconds(Math.Max(1, AppState.Current.Settings.PhotoDurationSeconds));
+        BigPlay.Visibility = Visibility.Collapsed;
+        UpdatePlayIcon();
 
-        if (card.Kind == MediaKind.Video && AppState.Current.MediaFor(card.Id) is { } videoPath)
+        if (card.Kind == MediaKind.Video && AppState.Current.MediaFor(card.Id) is { } videoPath && ResolvePath(videoPath) is { } resolvedVideo)
         {
-            PlayVideo(videoPath);
+            Stage.PlayVideo(resolvedVideo);
         }
         else
         {
-            ShowPhoto(card);
+            var photoPath = ResolvePath(AppState.Current.MediaFor(card.Id)) ?? ResolvePath(AppState.Current.ThumbnailFor(card.Id));
+            if (photoPath is null)
+            {
+                Stage.Clear();
+            }
+            else
+            {
+                Stage.ShowPhoto(photoPath);
+            }
         }
 
-        UpdateOverlay(card);
-        UpdatePlayIcon();
         EnsureTimer();
     }
 
     private static string BuildSubtitle(MemoryCard card)
     {
-        var parts = new List<string>();
-        parts.Add(card.Kind == MediaKind.Video ? "Vidéo" : "Photo");
+        var parts = new List<string> { card.Kind == MediaKind.Video ? "Vidéo" : "Photo" };
         if (card.DurationMs is { } ms && ms > 0)
         {
             parts.Add(TimeSpan.FromMilliseconds(ms).ToString(@"m\:ss"));
@@ -131,57 +137,6 @@ public sealed partial class StoryView : UserControl
             parts.Add("date inconnue");
         }
         return string.Join(" · ", parts);
-    }
-
-    private void ShowPhoto(MemoryCard card)
-    {
-        Video.Visibility = Visibility.Collapsed;
-        Photo.Visibility = Visibility.Visible;
-        var path = AppState.Current.MediaFor(card.Id) ?? AppState.Current.ThumbnailFor(card.Id);
-        if (path is null)
-        {
-            Photo.Source = null;
-            return;
-        }
-        Photo.Source = LoadImage(path, 0);
-    }
-
-    private void PlayVideo(string path)
-    {
-        Photo.Visibility = Visibility.Collapsed;
-        Video.Visibility = Visibility.Visible;
-        EnsurePlayer();
-        if (_player is not null)
-        {
-            Video.MediaPlayer = _player;
-        }
-
-        var resolved = ResolvePath(path);
-        if (resolved is null || _libVlc is null || _player is null)
-        {
-            return;
-        }
-
-        _media?.Dispose();
-        _media = new Media(_libVlc, new Uri(resolved));
-        _player.Play(_media);
-        _player.Mute = _muted;
-        _player.EndReached -= OnEndReached;
-        _player.EndReached += OnEndReached;
-    }
-
-    private void EnsurePlayer()
-    {
-        if (_initialized)
-        {
-            return;
-        }
-
-        LibVLCSharp.Shared.Core.Initialize();
-        _libVlc = new LibVLC("--no-video-title-show", "--quiet");
-        _player = new MediaPlayer(_libVlc);
-        Video.MediaPlayer = _player;
-        _initialized = true;
     }
 
     private void EnsureTimer()
@@ -206,10 +161,9 @@ public sealed partial class StoryView : UserControl
         }
 
         var card = _items[_index];
-        if (card.Kind == MediaKind.Video && _player is not null)
+        if (card.Kind == MediaKind.Video && Stage.IsVideo)
         {
-            var length = Math.Max(1, _player.Length);
-            UpdateProgress(Math.Clamp((double)_player.Time / length, 0, 1));
+            UpdateProgress(Stage.Position);
             return;
         }
 
@@ -224,11 +178,6 @@ public sealed partial class StoryView : UserControl
 
     private void UpdateProgress(double? current = null)
     {
-        if (_segments.Count == 0)
-        {
-            return;
-        }
-
         for (var i = 0; i < _fills.Count; i++)
         {
             var width = _segments[i].ActualWidth;
@@ -236,98 +185,22 @@ public sealed partial class StoryView : UserControl
             {
                 continue;
             }
-            if (i < _index)
-            {
-                _fills[i].Width = width;
-            }
-            else if (i == _index)
-            {
-                _fills[i].Width = width * (current ?? 0);
-            }
-            else
-            {
-                _fills[i].Width = 0;
-            }
+            _fills[i].Width = i < _index ? width : i == _index ? width * (current ?? 0) : 0;
         }
     }
 
-    private void UpdateOverlay(MemoryCard card)
+    private static string? ResolvePath(string? path)
     {
-        var path = AppState.Current.OverlayFor(card.Id);
-        if (path is null || !_overlayVisible)
-        {
-            OverlayImage.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        OverlayImage.Source = LoadImage(path, 0);
-        OverlayImage.Visibility = Visibility.Visible;
-        LayoutOverlay(card);
-    }
-
-    private void LayoutOverlay(MemoryCard card)
-    {
-        if (OverlayImage.Visibility != Visibility.Visible || Stage.ActualWidth <= 0 || Stage.ActualHeight <= 0)
-        {
-            return;
-        }
-
-        double mediaW = card.Width is > 0 ? card.Width.Value : 3;
-        double mediaH = card.Height is > 0 ? card.Height.Value : 4;
-        if (card.Status == MemoryStatus.OverlayOnly)
-        {
-            mediaW = 3;
-            mediaH = 4;
-        }
-
-        var scale = Math.Min(Stage.ActualWidth / mediaW, Stage.ActualHeight / mediaH);
-        var w = mediaW * scale;
-        var h = mediaH * scale;
-        var x = (Stage.ActualWidth - w) / 2;
-        var y = (Stage.ActualHeight - h) / 2;
-        System.Diagnostics.Debug.WriteLine($"stage {Stage.ActualWidth}x{Stage.ActualHeight} media {mediaW}x{mediaH} overlay {w}x{h} at {x},{y}");
-        Canvas.SetLeft(OverlayImage, x);
-        Canvas.SetTop(OverlayImage, y);
-        OverlayImage.Width = w;
-        OverlayImage.Height = h;
-    }
-
-    private static BitmapImage? LoadImage(string path, int decodeWidth)
-    {
-        try
-        {
-            var bitmap = new BitmapImage();
-            if (decodeWidth > 0)
-            {
-                bitmap.DecodePixelWidth = decodeWidth;
-            }
-            bitmap.UriSource = new Uri(path, UriKind.RelativeOrAbsolute);
-            return bitmap;
-        }
-        catch
+        if (string.IsNullOrEmpty(path))
         {
             return null;
         }
-    }
-
-    private static string? ResolvePath(string path)
-    {
         if (path.StartsWith("ms-appx:///", StringComparison.OrdinalIgnoreCase))
         {
             var relative = path["ms-appx:///".Length..].Replace('/', '\\');
             return System.IO.Path.Combine(AppContext.BaseDirectory, relative);
         }
         return File.Exists(path) ? path : null;
-    }
-
-    private void OnStageSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (_items.Count == 0)
-        {
-            return;
-        }
-        LayoutOverlay(_items[_index]);
-        UpdateProgress();
     }
 
     private void Next()
@@ -352,26 +225,24 @@ public sealed partial class StoryView : UserControl
     }
 
     private void OnNext(object sender, RoutedEventArgs e) => Next();
-
     private void OnPrevious(object sender, RoutedEventArgs e) => Previous();
-
     private void OnPlayPause(object sender, RoutedEventArgs e) => TogglePause();
 
     private void TogglePause()
     {
         _paused = !_paused;
-        if (_items.Count > 0 && _items[_index].Kind == MediaKind.Video && _player is not null)
+        if (_items.Count > 0 && _items[_index].Kind == MediaKind.Video && Stage.IsVideo)
         {
             if (_paused)
             {
-                _player.Pause();
+                Stage.Pause();
             }
             else
             {
-                _player.Play();
+                Stage.Resume();
             }
         }
-        else if (_items.Count > 0 && _items[_index].Kind != MediaKind.Video)
+        else if (_items.Count > 0)
         {
             if (_paused)
             {
@@ -382,6 +253,7 @@ public sealed partial class StoryView : UserControl
                 _photoStarted = DateTimeOffset.Now;
             }
         }
+
         UpdatePlayIcon();
         BigPlay.Visibility = _paused ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -394,19 +266,13 @@ public sealed partial class StoryView : UserControl
     private void OnToggleOverlay(object sender, RoutedEventArgs e)
     {
         _overlayVisible = !_overlayVisible;
-        if (_items.Count > 0)
-        {
-            UpdateOverlay(_items[_index]);
-        }
+        Stage.SetOverlayVisible(_overlayVisible);
     }
 
     private void OnToggleMute(object sender, RoutedEventArgs e)
     {
         _muted = !_muted;
-        if (_player is not null)
-        {
-            _player.Mute = _muted;
-        }
+        Stage.Mute = _muted;
         MuteButton.Opacity = _muted ? 0.55 : 1;
     }
 
@@ -414,33 +280,11 @@ public sealed partial class StoryView : UserControl
 
     private void Close()
     {
-        StopVideo();
         _timer?.Stop();
+        Stage.StopVideo();
+        Stage.Clear();
         Closed?.Invoke(this, EventArgs.Empty);
         Focus(FocusState.Programmatic);
-    }
-
-    private void StopVideo()
-    {
-        if (_player is not null)
-        {
-            _player.EndReached -= OnEndReached;
-            try
-            {
-                _player.Stop();
-            }
-            catch
-            {
-                // LibVLC peut déjà avoir libéré la sortie vidéo.
-            }
-        }
-        _media?.Dispose();
-        _media = null;
-    }
-
-    private void OnEndReached(object? sender, EventArgs e)
-    {
-        DispatcherQueue.TryEnqueue(Next);
     }
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
@@ -473,19 +317,4 @@ public sealed partial class StoryView : UserControl
                 break;
         }
     }
-
-    private void DisposePlayer()
-    {
-        StopVideo();
-        _timer?.Stop();
-        _timer = null;
-        _player?.Dispose();
-        _libVlc?.Dispose();
-        _player = null;
-        _libVlc = null;
-        _initialized = false;
-    }
 }
-
-
-
