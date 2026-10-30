@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using LibVLCSharp.Shared;
 using Microsoft.UI.Dispatching;
+using Memo.Media;
 using Microsoft.UI.Xaml.Controls;
 using SkiaSharp;
 using SkiaSharp.Views.Windows;
@@ -291,12 +292,20 @@ public sealed class MediaStage : UserControl
     {
         try
         {
-            using var stream = File.OpenRead(path);
-            return SKBitmap.Decode(stream);
+            using var decoded = ImageDecoder.Decode(path);
+            return decoded.Bitmap.Copy();
         }
         catch
         {
-            return null;
+            try
+            {
+                using var stream = File.OpenRead(path);
+                return SKBitmap.Decode(stream);
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 
@@ -335,6 +344,7 @@ public sealed class MediaStage : UserControl
         }
     }
 }
+
 
 
 

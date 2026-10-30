@@ -73,6 +73,23 @@ public sealed partial class SettingsPage : Page
                 return;
             }
         }
+
+        // Les identifiants IANA et Windows ne se correspondent pas toujours
+        // (Europe/Zurich -> W. Europe Standard Time -> Europe/Berlin).
+        if (TimeZoneInfo.TryConvertIanaIdToWindowsId(tag, out var windowsId))
+        {
+            foreach (var item in box.Items.OfType<ComboBoxItem>())
+            {
+                if (item.Tag is string itemTag &&
+                    TimeZoneInfo.TryConvertIanaIdToWindowsId(itemTag, out var itemWindows) &&
+                    string.Equals(itemWindows, windowsId, StringComparison.OrdinalIgnoreCase))
+                {
+                    box.SelectedItem = item;
+                    return;
+                }
+            }
+        }
+
         if (box.Items.Count > 0)
         {
             box.SelectedIndex = 0;

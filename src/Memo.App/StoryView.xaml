@@ -48,6 +48,32 @@
                 VerticalAlignment="Top"
                 FontSize="12"
                 Foreground="#B0A79A" />
+
+            <Border
+                x:Name="ExportPanel"
+                Margin="24"
+                Padding="20"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="#E60E0D0C"
+                BorderBrush="#33F4EFE7"
+                BorderThickness="1"
+                CornerRadius="8"
+                Visibility="Collapsed">
+                <StackPanel Width="320" Spacing="10">
+                    <TextBlock
+                        x:Name="ExportTitle"
+                        FontSize="15"
+                        Foreground="#F4EFE7"
+                        Text="Export de la Story" />
+                    <ProgressBar x:Name="ExportProgress" Maximum="100" />
+                    <TextBlock
+                        x:Name="ExportStatus"
+                        FontSize="12"
+                        Foreground="#B0A79A"
+                        Text="Préparation…" />
+                </StackPanel>
+            </Border>
         </Grid>
 
         <Grid Grid.Row="2" Margin="32,0,32,18">
@@ -74,6 +100,20 @@
                 Grid.Column="1"
                 Orientation="Horizontal"
                 Spacing="4">
+                <Button
+                    x:Name="ExportButton"
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnExport"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Exporter cette Story en vidéo">
+                    <FontIcon
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE74E;" />
+                </Button>
                 <Button
                     x:Name="OverlayButton"
                     Width="40"

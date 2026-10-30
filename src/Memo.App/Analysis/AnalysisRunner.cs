@@ -348,7 +348,38 @@ public sealed class AnalysisRunner
                 string engine = string.IsNullOrWhiteSpace(result.Language)
                     ? LocalOcrService.EngineId
                     : $"{LocalOcrService.EngineId}/{result.Language}";
-                await _library.Analysis.SetOcrTextAsync(card.Id, result.Text, engine, ct).ConfigureAwait(false);
+
+                // Un calque porte souvent le texte le plus lisible (heure, légende,
+                // sticker) : on l'indexe avec le média principal.
+                var combined = result.Text;
+                if (card.OverlayAssetId is long overlayAssetId)
+                {
+                    try
+                    {
+                        var overlayPath = await Task.Run(
+                            () => _library.Catalog.GetAssetPath(overlayAssetId), ct).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(overlayPath) && File.Exists(overlayPath))
+                        {
+                            var overlayResult = await _ocr.RecognizeAsync(overlayPath, ct).ConfigureAwait(false);
+                            if (overlayResult.Succeeded && !string.IsNullOrWhiteSpace(overlayResult.Text))
+                            {
+                                combined = string.IsNullOrWhiteSpace(combined)
+                                    ? overlayResult.Text
+                                    : combined + "\n" + overlayResult.Text;
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        AddDiagnostic(diagnostics, $"Calque OCR ignoré pour le souvenir {card.Id} : {ex.Message}");
+                    }
+                }
+
+                await _library.Analysis.SetOcrTextAsync(card.Id, combined, engine, ct).ConfigureAwait(false);
                 completed++;
             }
             catch (OperationCanceledException)

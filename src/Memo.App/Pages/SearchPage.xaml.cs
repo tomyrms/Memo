@@ -1,3 +1,4 @@
+using Memo.App.Analysis;
 using Memo.App.Services;
 using Memo.App.Ui;
 using Memo.Core;
@@ -24,7 +25,7 @@ public sealed partial class SearchPage : Page
         Loaded += async (_, _) => { _ready = true; await RunAsync(string.Empty); };
     }
 
-    private void OnModeChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    private async void OnModeChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
         if (!_ready)
         {
@@ -34,6 +35,15 @@ public sealed partial class SearchPage : Page
         TextPanel.Visibility = text == "Texte" ? Visibility.Visible : Visibility.Collapsed;
         PeoplePanel.Visibility = text == "Personnes" ? Visibility.Visible : Visibility.Collapsed;
         VisualPanel.Visibility = text == "Ressemblance" ? Visibility.Visible : Visibility.Collapsed;
+
+        if (text == "Personnes")
+        {
+            await LoadPeopleAsync();
+        }
+        else if (text == "Ressemblance")
+        {
+            PopulateReferences();
+        }
     }
 
     private void OnQueryChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
@@ -80,15 +90,81 @@ public sealed partial class SearchPage : Page
         }
     }
 
-    private async void OnPerson1(object sender, RoutedEventArgs e) => await ShowPersonAsync("Personne 1", new long[] { 2, 7, 12, 18 }, 8);
-    private async void OnPerson2(object sender, RoutedEventArgs e) => await ShowPersonAsync("Personne 2", new long[] { 9, 13, 19 }, 5);
+    private async void OnPerson1(object sender, RoutedEventArgs e) => await LoadPeopleAsync();
 
-    private async Task ShowPersonAsync(string name, long[] ids, int claimed)
+    private async Task LoadPeopleAsync()
     {
+        PeopleList.Children.Clear();
+        if (AppState.Current.Library is null)
+        {
+            PeopleStatus.Text = "Ouvrez une bibliothèque pour charger les groupes de visages.";
+            return;
+        }
+
+        var groups = await AppState.Current.Library.Analysis.GetPersonGroupsAsync();
+        if (groups.Count == 0)
+        {
+            PeopleStatus.Text = "Aucun groupe pour l'instant. Lancez l'analyse des visages depuis Réglages, puis revenez ici.";
+            return;
+        }
+
+        PeopleStatus.Text = $"{groups.Count} groupe(s) proposé(s). Les noms restent à confirmer par vous.";
+        foreach (var group in groups)
+        {
+            PeopleList.Children.Add(PersonTile(group));
+        }
+    }
+
+    private Button PersonTile(PersonGroupInfo group)
+    {
+        var panel = new StackPanel { Width = 180, Spacing = 6 };
+        var cover = new Border
+        {
+            Height = 120,
+            CornerRadius = new CornerRadius(4),
+            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MemoPhotoPlaceholderBrush"]
+        };
+        if (group.CoverPath is not null && File.Exists(group.CoverPath))
+        {
+            cover.Child = new Image
+            {
+                Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(group.CoverPath)),
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill
+            };
+        }
+        panel.Children.Add(cover);
+        panel.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(group.Name) ? "Groupe sans nom" : group.Name,
+            Style = Widgets.Style("MemoBodyTextStyle")
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"{group.MemoryCount} souvenir(s) · {group.FaceCount} visage(s)",
+            Style = Widgets.Style("MemoCaptionTextStyle")
+        });
+
+        var button = new Button
+        {
+            Content = panel,
+            Style = Widgets.Style("MemoTileButtonStyle"),
+            Padding = new Thickness(0)
+        };
+        button.Click += async (_, _) => await ShowPersonGroupAsync(group);
+        return button;
+    }
+
+    private async Task ShowPersonGroupAsync(PersonGroupInfo group)
+    {
+        if (AppState.Current.Library is null)
+        {
+            return;
+        }
+        var ids = await AppState.Current.Library.Analysis.GetMemoriesForPersonAsync(group.Id);
         var cards = AppState.Current.Cards.Where(c => ids.Contains(c.Id)).ToList();
         var body = new StackPanel { Spacing = 8, MinWidth = 360 };
-        body.Children.Add(Widgets.Secondary($"{cards.Count} souvenir(s) visibles dans cette démonstration sur {claimed} annoncés."));
-        body.Children.Add(Widgets.Caption("Les groupes sont des propositions locales, pas des identités certaines."));
+        body.Children.Add(Widgets.Secondary($"{cards.Count} souvenir(s) associé(s)."));
+        body.Children.Add(Widgets.Caption("Les groupes sont des propositions locales, pas des identités certaines. Corrigez-les dans une prochaine version."));
         var play = new Button
         {
             Content = "Lire ces souvenirs",
@@ -106,7 +182,7 @@ public sealed partial class SearchPage : Page
 
         var dialog = new ContentDialog
         {
-            Title = name,
+            Title = string.IsNullOrWhiteSpace(group.Name) ? "Groupe de visages" : group.Name,
             Content = body,
             CloseButtonText = "Fermer",
             XamlRoot = XamlRoot
@@ -114,9 +190,62 @@ public sealed partial class SearchPage : Page
         await dialog.ShowAsync();
     }
 
-    private void OnEnableVisual(object sender, RoutedEventArgs e)
+    private void PopulateReferences()
     {
-        VisualStatus.Text = "Le calcul local sera disponible après activation dans Réglages. Aucun résultat n'est affiché tant que l'analyse n'a pas eu lieu.";
+        ReferenceBox.Items.Clear();
+        foreach (var card in AppState.Current.Cards.Where(c => c.Kind == MediaKind.Photo).Take(300))
+        {
+            ReferenceBox.Items.Add(new ComboBoxItem
+            {
+                Content = $"{Widgets.DateLabel(card)} · {card.LocationLabel ?? card.ExternalKey}",
+                Tag = card.Id
+            });
+        }
+        ReferenceBox.SelectedIndex = ReferenceBox.Items.Count > 0 ? 0 : -1;
+        VisualStatus.Text = ReferenceBox.Items.Count == 0
+            ? "Aucune photo disponible pour la comparaison."
+            : "Choisissez une référence, puis lancez la comparaison.";
+        SimilarGrid.ItemsSource = null;
+    }
+
+    private async void OnFindSimilar(object sender, RoutedEventArgs e)
+    {
+        if (AppState.Current.Library is null)
+        {
+            VisualStatus.Text = "Ouvrez une bibliothèque pour utiliser la recherche visuelle.";
+            return;
+        }
+        if (ReferenceBox.SelectedItem is not ComboBoxItem item || item.Tag is not long referenceId)
+        {
+            return;
+        }
+
+        var hashes = await AppState.Current.Library.Analysis.GetVisualHashesAsync();
+        var reference = hashes.FirstOrDefault(h => h.MemoryId == referenceId);
+        if (reference.Hash == 0)
+        {
+            VisualStatus.Text = "Lancez d'abord l'analyse locale depuis Réglages (empreintes visuelles).";
+            return;
+        }
+
+        var similar = VisualHashService.FindSimilar(reference.Hash, hashes, 12)
+            .Where(s => s.MemoryId != referenceId)
+            .Select(s => s.MemoryId)
+            .ToHashSet();
+        var cards = AppState.Current.Cards.Where(c => similar.Contains(c.Id)).ToList();
+        SimilarGrid.ItemsSource = cards;
+        VisualStatus.Text = cards.Count == 0
+            ? "Aucune image proche trouvée."
+            : $"{cards.Count} image(s) proche(s), de la plus proche à la plus éloignée.";
+    }
+
+    private void OnSimilarClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is MemoryCard card && SimilarGrid.ItemsSource is IEnumerable<MemoryCard> list)
+        {
+            var items = list.ToList();
+            App.MainWindow?.ShowStory(items, Math.Max(0, items.IndexOf(card)));
+        }
     }
 }
 

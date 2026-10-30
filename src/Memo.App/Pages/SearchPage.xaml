@@ -82,53 +82,60 @@
                     Title="Fonction facultative"
                     Message="Les groupes de visages sont calculés localement, sans nom automatique. Ils restent corrigeables et supprimables." />
                 <StackPanel Grid.Row="1" Spacing="12">
-                    <TextBlock Text="Groupes proposés" Style="{StaticResource MemoSectionTextStyle}" />
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <Button Click="OnPerson1" Style="{StaticResource MemoTileButtonStyle}">
-                            <StackPanel Width="200" Spacing="8">
-                                <Border Height="140" Background="{ThemeResource MemoPhotoPlaceholderBrush}" CornerRadius="4">
-                                    <Image Source="ms-appx:///Assets/Demo/demo02.jpg" Stretch="UniformToFill" />
-                                </Border>
-                                <TextBlock Text="Personne 1" Style="{StaticResource MemoBodyTextStyle}" />
-                                <TextBlock Text="8 souvenirs · à confirmer" Style="{StaticResource MemoCaptionTextStyle}" />
-                            </StackPanel>
-                        </Button>
-                        <Button Click="OnPerson2" Style="{StaticResource MemoTileButtonStyle}">
-                            <StackPanel Width="200" Spacing="8">
-                                <Border Height="140" Background="{ThemeResource MemoPhotoPlaceholderBrush}" CornerRadius="4">
-                                    <Image Source="ms-appx:///Assets/Demo/demo09.jpg" Stretch="UniformToFill" />
-                                </Border>
-                                <TextBlock Text="Personne 2" Style="{StaticResource MemoBodyTextStyle}" />
-                                <TextBlock Text="5 souvenirs · à confirmer" Style="{StaticResource MemoCaptionTextStyle}" />
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
+                    <TextBlock x:Name="PeopleStatus" Style="{StaticResource MemoSecondaryTextStyle}" />
+                    <StackPanel x:Name="PeopleList" Orientation="Horizontal" Spacing="12" />
                 </StackPanel>
             </Grid>
 
             <Grid x:Name="VisualPanel" Visibility="Collapsed" RowSpacing="12">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
                 <InfoBar
                     IsOpen="True"
                     Severity="Informational"
-                    Title="Recherche visuelle non activée"
-                    Message="L'analyse locale n'est pas encore lancée sur cette bibliothèque. Aucun résultat n'est simulé." />
-                <StackPanel Spacing="8" VerticalAlignment="Top" Margin="0,64,0,0">
-                    <TextBlock Text="Activer l'analyse locale" Style="{StaticResource MemoSectionTextStyle}" />
-                    <TextBlock
-                        MaxWidth="620"
-                        HorizontalAlignment="Left"
-                        Style="{StaticResource MemoSecondaryTextStyle}"
-                        Text="Memo peut calculer une empreinte perceptuelle de chaque miniature pour retrouver des images proches. Le calcul se fait sur ce PC et peut être supprimé à tout moment." />
+                    Title="Recherche par ressemblance"
+                    Message="Les empreintes sont calculées localement, à partir des miniatures. Aucun média n'est envoyé à l'extérieur." />
+                <StackPanel
+                    Grid.Row="1"
+                    Margin="0,12,0,0"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <ComboBox
+                        x:Name="ReferenceBox"
+                        MinWidth="280"
+                        Style="{StaticResource MemoComboBoxStyle}" />
                     <Button
-                        Click="OnEnableVisual"
-                        Content="Activer et analyser"
-                        HorizontalAlignment="Left"
-                        Margin="0,8,0,0"
-                        Style="{StaticResource MemoPrimaryButtonStyle}" />
+                        Click="OnFindSimilar"
+                        Content="Trouver des similaires"
+                        Style="{StaticResource MemoSecondaryButtonStyle}" />
                     <TextBlock
                         x:Name="VisualStatus"
+                        VerticalAlignment="Center"
                         Style="{StaticResource MemoCaptionTextStyle}" />
                 </StackPanel>
+                <GridView
+                    x:Name="SimilarGrid"
+                    Grid.Row="2"
+                    IsItemClickEnabled="True"
+                    ItemClick="OnSimilarClick"
+                    SelectionMode="None">
+                    <GridView.ItemTemplate>
+                        <DataTemplate>
+                            <controls:MemoryTile Card="{Binding}" ShowDate="True" />
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                    <GridView.ItemContainerStyle>
+                        <Style TargetType="GridViewItem">
+                            <Setter Property="Margin" Value="0,0,8,8" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="MinWidth" Value="0" />
+                            <Setter Property="MinHeight" Value="0" />
+                        </Style>
+                    </GridView.ItemContainerStyle>
+                </GridView>
             </Grid>
         </Grid>
     </Grid>

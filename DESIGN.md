@@ -102,6 +102,20 @@ Exception assumée à Uncodixfy : la police système Windows est conservée. Ell
 
 ## Revues
 
+Méthode : revue de design native (Impeccable 4.8.0, `audit.native` / `craft-floor`), sans détecteur automatique — celui-ci ne lit pas XAML. Chaque écran a été inspecté sur capture réelle en 1320×860 puis en 1040×1800 (écran portrait), avec les états vide, données réelles et démo.
+
 | Date | Écran | États examinés | Corrections | Limites |
 |---|---|---|---|---|
-| — | — | — | — | — |
+| 30/10 | Accueil « À redécouvrir » | démo, bibliothèque réelle, aucun souvenir du jour, médias non datés | accent bleu système remplacé par le brun Memo ; barre de titre accordée ; sections à 20 px ; badge démo en casse normale ; état vide utile | données réelles éparses sur le corpus ; pas de recette lecteur d'écran |
+| 30/10 | Bibliothèque | photos, vidéos sans aperçu, date inconnue, filtres, sélection | champ de recherche élargi ; placeholder explicite « aperçu à générer » ; compteur et états vides ; actions persistées (favori, exclusion, date, lieu) | ligne de séparation des mois héritée du groupement natif ; virtualisation non mesurée à 10 000 éléments |
+| 30/10 | Lecteur Story | photo, vidéo HEVC, calque, pause, progression, clavier | sortie vidéo embarquée via frames LibVLC + Skia (plus de fenêtre VLC séparée) ; barres de progression en grille ; EXIF photo ; sous-titre sans doublon | vidéos synthétiques non décodables sans aperçu ; pas de plein écran dédié |
+| 30/10 | Albums | aucun album, album réel, création, renommage, suppression | état vide avec action ; masquage des actions sans sélection ; collections réelles | pas encore de réordonnancement par glisser-déposer |
+| 30/10 | Récapitulatifs | année réelle, sélection vide, couverture partielle | couverture unique avec repli « Aperçu à générer » ; badge +N ; enregistrement en collection | pas de réordonnancement manuel dans l'interface |
+| 30/10 | Recherche | texte, OCR, visuelle, personnes, vide | compteur de résultats ; sélecteur de référence ; résultats réels via empreintes ; groupes réels | OCR dépendant du pack de langue ; groupes de visages indicatifs |
+| 30/10 | Carte | lieux réels, aucun lieu, édition | frontières Natural Earth réelles, remplacement du fond vide ; ajout de lieu depuis la fiche | pas de zoom/pan ; fond hors ligne uniquement |
+| 30/10 | Imports | sélection, progression, bilan, archive corrompue, réimport | espaces réels, progression réelle, diagnostics, statuts traduits | pas de glisser-déposer de ZIP |
+| 30/10 | Réglages | bibliothèque réelle, fuseau, sauvegarde, rappels, analyses | ouverture/création réelles ; fuseau IANA↔Windows corrigé ; sauvegarde/restauration ; rappels planifiés ; analyse locale | notifications dépendantes des réglages Windows ; pas de test sur machine N |
+
+Contrôles Uncodixfy appliqués : aucun dégradé, verre, ombre décorative, pilule, surtitre en majuscules ou carte imbriquée ; rayons ≤ 8 px ; navigation native 240 px ; accent unique ; états vides réels. Exceptions documentées : police système Segoe UI Variable, focus natif conservé et teinté, densité bureau 32 px.
+
+Restant à vérifier : parcours clavier complet, lecteur d'écran, 1024 px, réduction des animations, contrastes des états désactivés.

@@ -1,3 +1,4 @@
+using Memo.App.Export;
 using Memo.App.Services;
 using Memo.Core;
 using Microsoft.UI.Dispatching;
@@ -5,6 +6,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Storage.Pickers;
 
 namespace Memo.App;
 
@@ -132,10 +134,6 @@ public sealed partial class StoryView : UserControl
         {
             parts.Add("calque disponible");
         }
-        if (card.LocalDate is null)
-        {
-            parts.Add("date inconnue");
-        }
         return string.Join(" · ", parts);
     }
 
@@ -201,6 +199,119 @@ public sealed partial class StoryView : UserControl
             return System.IO.Path.Combine(AppContext.BaseDirectory, relative);
         }
         return File.Exists(path) ? path : null;
+    }
+
+    private async void OnExport(object sender, RoutedEventArgs e)
+    {
+        if (_items.Count == 0)
+        {
+            return;
+        }
+
+        var picker = new FileSavePicker
+        {
+            SuggestedStartLocation = PickerLocationId.VideosLibrary,
+            SuggestedFileName = $"memo-story-{DateTime.Now:yyyyMMdd-HHmm}"
+        };
+        picker.FileTypeChoices.Add("Vidéo MP4", new List<string> { ".mp4" });
+        WinRT.Interop.InitializeWithWindow.Initialize(
+            picker,
+            WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null)
+        {
+            return;
+        }
+
+        var items = new List<StoryExportItem>();
+        foreach (var card in _items)
+        {
+            var main = ResolvePath(AppState.Current.MediaFor(card.Id))
+                       ?? (card.Kind == MediaKind.Photo ? ResolvePath(AppState.Current.ThumbnailFor(card.Id)) : null);
+            if (main is null)
+            {
+                continue;
+            }
+            var overlay = ResolvePath(AppState.Current.OverlayFor(card.Id));
+            items.Add(new StoryExportItem(
+                main,
+                overlay,
+                card.Kind,
+                card.DurationMs is > 0 ? card.DurationMs.Value / 1000.0 : AppState.Current.Settings.PhotoDurationSeconds,
+                card.Width ?? 1080,
+                card.Height ?? 1920));
+        }
+
+        if (items.Count == 0)
+        {
+            await ShowExportMessageAsync("Export impossible", "Aucun média lisible dans cette sélection.");
+            return;
+        }
+
+        var wasPaused = _paused;
+        _paused = true;
+        Stage.Pause();
+        ExportPanel.Visibility = Visibility.Visible;
+        ExportProgress.Value = 0;
+        ExportStatus.Text = "Préparation…";
+
+        try
+        {
+            var request = new StoryExportRequest(
+                items,
+                file.Path,
+                "Memo",
+                StoryExportQuality.Hd1080,
+                AppState.Current.Settings.PlayAudio,
+                AppState.Current.Settings.PhotoDurationSeconds);
+            var progress = new Progress<StoryExportProgress>(p =>
+            {
+                ExportProgress.Value = p.Percent;
+                ExportStatus.Text = p.ItemCount > 0
+                    ? $"{p.Message} · {p.ItemIndex}/{p.ItemCount}"
+                    : p.Message;
+            });
+            var result = await new StoryExporter().ExportAsync(request, progress);
+            if (result.Succeeded)
+            {
+                await ShowExportMessageAsync("Export terminé",
+                    $"Vidéo créée : {result.OutputPath}\n{result.SizeBytes / 1_000_000.0:0.#} Mo · {result.Duration.TotalSeconds:0} s");
+            }
+            else if (result.Cancelled)
+            {
+                await ShowExportMessageAsync("Export annulé", "Aucun fichier final n'a été conservé.");
+            }
+            else
+            {
+                await ShowExportMessageAsync("Export impossible", result.ErrorMessage ?? "Erreur inconnue.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ShowExportMessageAsync("Export impossible", ex.Message);
+        }
+        finally
+        {
+            ExportPanel.Visibility = Visibility.Collapsed;
+            _paused = wasPaused;
+            if (!_paused)
+            {
+                Stage.Resume();
+            }
+            UpdatePlayIcon();
+        }
+    }
+
+    private async Task ShowExportMessageAsync(string title, string message)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            CloseButtonText = "Fermer",
+            XamlRoot = XamlRoot
+        };
+        await dialog.ShowAsync();
     }
 
     private void Next()
@@ -318,3 +429,4 @@ public sealed partial class StoryView : UserControl
         }
     }
 }
+

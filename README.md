@@ -1,57 +1,108 @@
 # Memo
 
-Application Windows pour conserver ses Souvenirs Snapchat sur son disque et les redécouvrir : galerie chronologique, lecture façon Story, « Ce jour-là », favoris, albums et récapitulatifs.
+Application Windows pour conserver ses Souvenirs Snapchat sur son disque et les redécouvrir : galerie chronologique, lecture façon Story, « Ce jour-là », favoris, albums, récapitulatifs et recherche locale.
 
-**État : projet cadré, développement à réaliser.** Ce dépôt prépare le produit et son backlog. Il ne contient pas encore d'application installable. Dépôt : [tomyrms/Memo](https://github.com/tomyrms/Memo).
+**État : version 0.1.0, application fonctionnelle en cours de validation de distribution.** Import multi-ZIP, catalogue local, lecture photo/vidéo avec calques, albums, recherche, sauvegarde/restauration et rappels sont implémentés. Les limites sont décrites plus bas, sans les masquer.
 
-## Expérience attendue
+Dépôt : [tomyrms/Memo](https://github.com/tomyrms/Memo).
 
-1. Sélectionner les ZIP d'un export Snapchat, ou un dossier déjà extrait.
-2. Retrouver immédiatement les médias disponibles pendant que l'import se poursuit.
-3. Ajouter d'autres archives plus tard : l'application complète les souvenirs déjà importés sans perdre les favoris ou les corrections.
-4. Parcourir les années, les mois et les journées, ou ouvrir « Ce jour-là » en lecture Story.
-5. Sauvegarder la bibliothèque sur un autre disque et la restaurer sur un autre PC.
+## Installation
 
-La consultation et les fonctions de redécouverte fonctionnent hors ligne une fois les médias récupérés. L'import d'un export contenant des liens demande une connexion pour télécharger ces médias.
+Prérequis : Windows 10 21H2 (build 19041) ou Windows 11, x64.
 
-## Principes
+1. Télécharger `MemoSetup-0.1.0.exe` depuis la release GitHub.
+2. Lancer l'installateur. Il installe Memo dans `%LOCALAPPDATA%\Programs\Memo` sans élévation.
+3. L'installateur n'est pas signé : SmartScreen peut afficher un avertissement. Vérifier le SHA-256 publié avec la release.
 
-- **Plusieurs ZIP dès le départ.** Un calque, son média et ses métadonnées peuvent arriver dans des archives différentes.
-- **Fichiers sources conservés.** L'application garde les octets importés ; les miniatures, rendus composés et analyses sont des dérivés séparés.
-- **Dates explicites.** Conserver la valeur brute, sa provenance, sa précision et les corrections. Ne pas transformer la date du ZIP en date du souvenir.
-- **Bibliothèque utilisable sans index.** Les photos sans date restent visibles et peuvent être enrichies ultérieurement.
-- **Apparence fidèle.** Associer média et calque, reconnaître le format réel et appliquer une seule fois l'orientation.
-- **Données locales.** Pas de compte pour consulter sa bibliothèque, pas d'envoi des médias à un service d'analyse. Les fonctions d'analyse locale avancées sont facultatives.
-- **Développement avec des exemples synthétiques.** Aucun export personnel, historique de compte, jeton de téléchargement ou inventaire nominatif dans le dépôt.
+Les données restent locales. Aucun compte, aucun envoi de média, aucun service distant.
 
-## Suivi du développement
+## Premier lancement
 
-[Consulter les 20 issues](https://github.com/tomyrms/Memo/issues). Chaque issue contient sa priorité, sa phase, ses dépendances et ses critères d’acceptation. Les fonctions sont planifiées ; elles ne sont pas encore implémentées.
+1. Ouvrir **Réglages → Bibliothèque → Créer**.
+2. Choisir un nom et un dossier vide : Memo y crée `catalog.db`, `media/` et `derived/`.
+3. Aller dans **Imports**, sélectionner un ou plusieurs ZIP (ou un dossier de ZIP), puis **Importer**.
+4. Les archives suivantes complètent la bibliothèque ; les favoris, albums et dates corrigées sont conservés.
 
-- [Import de plusieurs ZIP — #3](https://github.com/tomyrms/Memo/issues/3)
-- [Ce jour-là — #9](https://github.com/tomyrms/Memo/issues/9)
-- [Récapitulatifs — #14](https://github.com/tomyrms/Memo/issues/14)
-- [À redécouvrir et Surprends-moi — #20](https://github.com/tomyrms/Memo/issues/20)
+L'import reconnaît le format des exports qui contiennent déjà les médias :
+
+```
+memories/<UUID>-main.jpg
+memories/<UUID>-main.mp4
+memories/<UUID>-overlay.png   (PNG ou WebP, malgré l'extension)
+```
+
+Il ne suppose pas que tous les exports Snapchat utilisent ce format. Les index HTML/JSON à liens distants ne sont pas activés tant qu'un exemple réel n'a pas été validé ; aucun téléchargement réseau n'est effectué.
+
+## Fonctionnalités
+
+- **Import multi-ZIP** avec reprise, idempotence, espaces sources séparés, diagnostics par élément.
+- **Dates explicites** : provenance de chaque date, correction manuelle, fuseau de classement recalculable, 29 février traité exactement.
+- **Galerie** par année/mois, filtres photo/vidéo, vue « Date inconnue », éléments à compléter.
+- **Lecteur Story** photo/vidéo, calques alignés, progression, clavier, son, apparence avec ou sans calque.
+- **« Ce jour-là »**, « Une journée à redécouvrir » et « Surprends-moi ».
+- **Albums, favoris, exclusions** persistés et conservés lors des réimports.
+- **Recherche** texte (dont OCR local), visuelle par empreinte, groupes de visages facultatif.
+- **Récapitulatifs** annuels, mensuels et saisonniers, modifiables et enregistrables.
+- **Carte hors ligne** des souvenirs disposant d'un lieu explicite.
+- **Sauvegarde/restauration** portable et export d'une sélection.
+- **Export MP4** d'une Story via Media Foundation.
+- **Rappels Windows** facultatifs, discrets, via une tâche planifiée visible dans le Planificateur de tâches.
+
+## Données locales
+
+```
+<Bibliothèque>/
+  catalog.db                 catalogue SQLite
+  library.json               identité et fuseau de la bibliothèque
+  media/<xx>/<sha256>.<ext>  octets sources, jamais réécrits
+  derived/thumbs/            miniatures reconstructibles
+  imports/                   provenance des lots
+```
+
+Les chemins internes sont relatifs : une bibliothèque peut être déplacée ou restaurée sur un autre PC.
+
+## Développement
+
+Prérequis : .NET SDK 10, Windows 10/11 x64. Pour l'installateur : Inno Setup 6.
+
+```powershell
+git clone https://github.com/tomyrms/Memo.git
+cd Memo
+dotnet build Memo.slnx -c Debug
+dotnet test tests/Memo.Core.Tests/Memo.Core.Tests.csproj
+dotnet test tests/Memo.Media.Tests/Memo.Media.Tests.csproj
+
+# Corpus synthétique déterministe
+dotnet run --project tools/Memo.Corpus -- --out "$env:TEMP\memo-corpus" --seed 42 --count 20
+
+# Installateur
+./scripts/build-installer.ps1
+```
+
+Architecture : `Memo.Core` (domaine, SQLite, import, dates, découverte, sauvegarde), `Memo.Media` (formats, EXIF, WebP, HEVC, miniatures, composition), `Memo.App` (WinUI 3, lecteur, analyses locales, rappels, export), `tools/Memo.Corpus` (fixtures synthétiques).
+
+Dépendances principales : Windows App SDK 1.8, SkiaSharp 4.154, LibVLCSharp 3.10 / LibVLC 3.0.24 (LGPL, DLL séparées), Microsoft.Data.Sqlite 10.0. Voir `LICENSES/` et `docs/decisions/`.
+
+## Limites connues
+
+- Les index Snapchat à liens distants ne sont pas pris en charge dans cette version.
+- L'OCR dépend d'un pack de langue Windows ; l'absence est signalée sans bloquer l'application.
+- Les groupes de visages sont des **suggestions** (empreinte 64 bits), pas des identités certaines.
+- Les vidéos HEVC sont lues via LibVLC ; l'export MP4 nécessite l'encodeur H.264 de Media Foundation (Windows N : Media Feature Pack).
+- La validation sur une installation Windows propre sans extensions HEVC/WebP reste à effectuer.
+- L'installateur n'est pas signé.
+- Le rendu des calques semi-transparents à l'export peut différer légèrement de la source.
 
 ## Documentation
 
 | Document | Contenu |
 |---|---|
-| [Spécification produit](docs/specification.md) | Parcours, fonctions et règles d'usage |
-| [Architecture et import](docs/architecture.md) | Modèle, variantes d'export et choix à valider |
-| [Analyse critique des fichiers fournis](docs/analyse-import.md) | Résultats recoupés, limites et corrections |
-| [Feuille de route](docs/roadmap.md) | Jalons et ordre de développement |
-| [Backlog structuré](planning/issues.json) | Issues prêtes à créer, critères et dépendances |
-| [Publication sur GitHub](planning/README.md) | État de publication et règles de reprise |
+| [Spécification](docs/specification.md) | Parcours et règles produit |
+| [Architecture](docs/architecture.md) | Modèle, import, orientation, validation |
+| [Formats](docs/formats.md) | Format observé, variantes, contrat d'adaptateur |
+| [Installation](docs/install.md) | Prérequis, premiers pas, dépannage |
+| [Release](docs/release.md) | Procédure de publication |
+| [Progression](PROGRESS.md) | État réel, décisions, blocages |
+| [Design](DESIGN.md) | Direction artistique et revues d'écran |
 
-## Première version
-
-Import de plusieurs archives, association des médias/calques, lecture photo/vidéo, gestion des dates, galerie, lecture Story, « Ce jour-là », favoris et albums, sauvegarde/restauration et première distribution Windows.
-
-Les récapitulatifs mensuels/annuels/saisonniers, rappels Windows, suggestions d'événements, carte, export vidéo, OCR, recherche visuelle et groupes de personnes sont prévus dans les jalons suivants. « Surprends-moi » fait partie de l'espace de redécouverte.
-
-## Point de départ technique
-
-Une application Windows native en C#/.NET avec WinUI 3 et un catalogue SQLite est la **piste de départ à valider** dans la première issue. Les versions, le lecteur vidéo, le décodage HEVC/WebP et les composants distribués doivent être décidés sur un prototype représentatif avant de figer l'architecture. Aucun support de codec ou de version de Windows n'est annoncé comme testé à ce stade.
-
-Projet indépendant, sans affiliation avec Snapchat ou Snap. L'application s'appuie sur les exports fournis par leur propriétaire.
+Projet indépendant, sans affiliation avec Snapchat ou Snap. L'application s'appuie sur les exports fournis par leur propriétaire. Licence du code : à définir avant diffusion sous licence.
