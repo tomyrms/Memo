@@ -78,6 +78,7 @@ public sealed class MemoLibrary : IAsyncDisposable
             Name = cleanName,
             TimeZoneId = timeZone.Id,
             CreatedAt = createdAt,
+            UpdatedAt = createdAt,
         };
 
         var info = new LibraryInfo(document.Id, cleanName, root, timeZone.Id, createdAt);
@@ -89,6 +90,7 @@ public sealed class MemoLibrary : IAsyncDisposable
     public static async Task<MemoLibrary> OpenAsync(string rootPath, CancellationToken ct = default)
     {
         var info = await LibraryManifest.ReadAsync(rootPath, ct).ConfigureAwait(false);
+
         var catalogPath = Path.Combine(info.RootPath, "catalog.db");
         if (!File.Exists(catalogPath))
         {
@@ -100,7 +102,13 @@ public sealed class MemoLibrary : IAsyncDisposable
         Directory.CreateDirectory(Path.Combine(info.RootPath, "derived", "thumbs"));
         Directory.CreateDirectory(Path.Combine(info.RootPath, "imports"));
 
+        // Le catalogue est ouvert (et migré) avant de réécrire le manifeste :
+        // une base plus récente est refusée sans avoir modifié library.json.
         var catalog = await MemoCatalog.OpenAsync(info, ct).ConfigureAwait(false);
+
+        // Le manifeste 0.1.0 (version 1) est ensuite réécrit au format courant.
+        await LibraryManifest.EnsureCurrentVersionAsync(info.RootPath, ct).ConfigureAwait(false);
+
         return await BuildAsync(catalog, ct).ConfigureAwait(false);
     }
 

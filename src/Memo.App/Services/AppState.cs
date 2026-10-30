@@ -15,6 +15,7 @@ public sealed class AppState
 
     public MemoLibrary? Library { get; private set; }
     public bool IsDemo => Library is null;
+    public Guid? LibraryId => Library?.Info.Id;
     public string LibraryName { get; private set; } = "Bibliothèque de démonstration";
     public string? LibraryPath { get; private set; }
     public IReadOnlyList<SpaceInfo> Spaces { get; private set; } = Array.Empty<SpaceInfo>();
@@ -50,9 +51,47 @@ public sealed class AppState
     private int _libraryEpoch;
     private int _reloadVersion;
 
+    // Bibliothèque visée par une activation de notification. Tant qu'elle est
+    // définie, l'ouverture automatique de la « dernière bibliothèque » par la
+    // coquille ne doit pas remplacer la cible : le clic doit gagner, même s'il
+    // arrive pendant le chargement initial.
+    private ActivationTarget? _activationTarget;
+
+    /// <summary>
+    /// Cible d'activation encore valide. Une expiration de sécurité évite
+    /// qu'une activation jamais aboutie ne bloque indéfiniment les ouvertures
+    /// de bibliothèque.
+    /// </summary>
+    private ActivationTarget? ActiveActivation
+    {
+        get
+        {
+            var target = _activationTarget;
+            if (target is not null && DateTimeOffset.UtcNow > target.ExpiresAt)
+            {
+                _activationTarget = null;
+                return null;
+            }
+
+            return target;
+        }
+    }
+
     private AppState() { }
 
     public void LoadDemo()
+    {
+        // Une activation en cours ne doit pas être effacée par le repli de la
+        // coquille (lecture de la dernière bibliothèque en échec).
+        if (ActiveActivation is not null)
+        {
+            return;
+        }
+
+        LoadDemoCore();
+    }
+
+    private void LoadDemoCore()
     {
         // Invalide les opérations encore en vol sur une éventuelle bibliothèque.
         _libraryEpoch++;
@@ -79,13 +118,54 @@ public sealed class AppState
     }
 
     public Task OpenLibraryAsync(string rootPath, CancellationToken ct = default)
-        => SwitchLibraryAsync(token => MemoLibrary.OpenAsync(rootPath, token), ct);
+    {
+        // Une activation de notification est prioritaire sur l'ouverture
+        // automatique de la dernière bibliothèque par la coquille. Pendant ce
+        // court intervalle, une ouverture d'un autre chemin est redirigée vers
+        // la bibliothèque visée plutôt que de l'écraser.
+        var activation = ActiveActivation;
+        if (activation is not null && !PathEquals(rootPath, activation.LibraryPath))
+        {
+            return EnsureActivationLibraryAsync(activation.LibraryId, activation.LibraryPath, ct);
+        }
+
+        return OpenLibraryCoreAsync(rootPath, activation?.LibraryId, ct);
+    }
+
+    private Task OpenLibraryAsync(string rootPath, Guid? expectedLibraryId, CancellationToken ct)
+        => OpenLibraryCoreAsync(rootPath, expectedLibraryId, ct);
+
+    private async Task OpenLibraryCoreAsync(
+        string rootPath,
+        Guid? expectedLibraryId,
+        CancellationToken ct)
+    {
+        var full = Path.GetFullPath(rootPath);
+        var current = Library;
+        if (current is not null
+            && PathEquals(current.Info.RootPath, full)
+            && (expectedLibraryId is null || current.Info.Id == expectedLibraryId.Value))
+        {
+            // La bibliothèque demandée est déjà ouverte et entièrement chargée :
+            // inutile de relire tout le catalogue (cas de la coquille qui
+            // recharge la dernière bibliothèque au démarrage).
+            return;
+        }
+
+        await SwitchLibraryAsync(
+            token => MemoLibrary.OpenAsync(full, token),
+            ct,
+            expectedLibraryId);
+    }
 
     public Task CreateLibraryAsync(string rootPath, string name, CancellationToken ct = default)
     {
         // Le fuseau courant sert de valeur initiale au nouveau catalogue.
         var timeZoneId = Settings.TimeZoneId;
-        return SwitchLibraryAsync(token => MemoLibrary.CreateAsync(rootPath, name, timeZoneId, token), ct);
+        return SwitchLibraryAsync(
+            token => MemoLibrary.CreateAsync(rootPath, name, timeZoneId, token),
+            ct,
+            expectedLibraryId: null);
     }
 
     public async Task CloseLibraryAsync()
@@ -93,6 +173,7 @@ public sealed class AppState
         await _libraryGate.WaitAsync();
         try
         {
+            _activationTarget = null;
             var previous = Library;
             _libraryEpoch++;
             Library = null;
@@ -100,7 +181,7 @@ public sealed class AppState
             {
                 await previous.DisposeAsync();
             }
-            LoadDemo();
+            LoadDemoCore();
         }
         finally
         {
@@ -111,15 +192,26 @@ public sealed class AppState
     /// <summary>
     /// Bascule atomique : la nouvelle bibliothèque est ouverte et son contenu
     /// est chargé avant de remplacer l'ancienne. En cas d'échec, l'état courant
-    /// (et le chemin mémorisé) reste strictement inchangé.
+    /// (et le chemin mémorisé) reste strictement inchangé. Si
+    /// <paramref name="expectedLibraryId"/> est fourni, l'identifiant du
+    /// manifeste doit correspondre : un chemin réutilisé par une autre
+    /// bibliothèque est refusé avant toute bascule.
     /// </summary>
-    private async Task SwitchLibraryAsync(Func<CancellationToken, Task<MemoLibrary>> open, CancellationToken ct)
+    private async Task SwitchLibraryAsync(
+        Func<CancellationToken, Task<MemoLibrary>> open,
+        CancellationToken ct,
+        Guid? expectedLibraryId)
     {
         await _libraryGate.WaitAsync(ct);
         MemoLibrary? candidate = null;
         try
         {
             candidate = await open(ct);
+
+            if (expectedLibraryId is Guid expected && candidate.Info.Id != expected)
+            {
+                throw new LibraryMismatchException(candidate.Info.RootPath, expected, candidate.Info.Id);
+            }
 
             // Charge tout avant la bascule : Cards/Albums/Recaps ne sont jamais
             // vidés pour une bibliothèque qui ne s'ouvre pas entièrement.
@@ -130,7 +222,9 @@ public sealed class AppState
             candidate = null; // l'instance appartient désormais à AppState
 
             // Dernière bibliothèque mémorisée uniquement après succès complet.
-            RememberLibrary(LibraryPath!);
+            // L'identifiant est conservé pour retrouver la bibliothèque d'une
+            // notification même si le chemin mémorisé a changé entre-temps.
+            RememberLibrary(LibraryId!.Value, LibraryPath!, LibraryName);
 
             if (previous is not null)
             {
@@ -146,6 +240,165 @@ public sealed class AppState
             }
             _libraryGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Mémorise la bibliothèque visée par une activation de notification avant
+    /// que la fenêtre ne charge la dernière bibliothèque. L'identifiant est
+    /// l'information de référence ; le chemin n'est qu'un indice.
+    /// </summary>
+    public void BeginActivation(Guid? libraryId, string? fallbackPath)
+    {
+        var path = NormalizePath(fallbackPath);
+        if (libraryId is Guid id && path is null)
+        {
+            path = FindKnownLibraryPath(id) ?? NormalizePath(ReadLastLibrary());
+        }
+
+        _activationTarget = new ActivationTarget(
+            libraryId,
+            path,
+            DateTimeOffset.UtcNow.AddMinutes(2));
+    }
+
+    /// <summary>
+    /// Ouvre la bibliothèque visée par une notification et attend la fin
+    /// complète de son chargement. L'identifiant du manifeste est vérifié :
+    /// si le chemin mémorisé désigne désormais une autre bibliothèque, celle-ci
+    /// n'est pas ouverte à la place de la bonne.
+    /// </summary>
+    public async Task EnsureActivationLibraryAsync(
+        Guid? libraryId,
+        string? fallbackPath,
+        CancellationToken ct = default)
+    {
+        var activation = ActiveActivation;
+        var effectiveId = libraryId ?? activation?.LibraryId;
+
+        // Ancienne notification sans identifiant : la bibliothèque courante
+        // reste la référence, sinon on retombe sur le dernier chemin connu.
+        if (effectiveId is null)
+        {
+            if (Library is not null)
+            {
+                return;
+            }
+
+            var legacyPath = FirstPath(fallbackPath, activation?.LibraryPath, ReadLastLibrary());
+            if (legacyPath is null)
+            {
+                throw new LibraryActivationException(
+                    "Cette notification ne désigne aucune bibliothèque connue. " +
+                    "Ouvrez la bibliothèque depuis Réglages, puis cliquez à nouveau sur la notification.");
+            }
+
+            await OpenLibraryAsync(legacyPath, expectedLibraryId: null, ct);
+            return;
+        }
+
+        // La bonne bibliothèque est déjà ouverte et chargée.
+        if (Library is not null && Library.Info.Id == effectiveId.Value)
+        {
+            return;
+        }
+
+        // L'identifiant prime sur le chemin. On essaie d'abord le chemin
+        // mémorisé pour cet identifiant, puis les indices de la charge utile et
+        // enfin la dernière bibliothèque ouverte.
+        var candidates = new List<string>();
+        AddPath(candidates, FindKnownLibraryPath(effectiveId.Value));
+        AddPath(candidates, fallbackPath);
+        AddPath(candidates, activation?.LibraryPath);
+        AddPath(candidates, ReadLastLibrary());
+        AddPath(candidates, LibraryPath);
+
+        var problems = new List<string>();
+        foreach (var candidate in candidates)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!Directory.Exists(candidate))
+            {
+                problems.Add($"« {candidate} » est introuvable");
+                continue;
+            }
+
+            try
+            {
+                await OpenLibraryAsync(candidate, effectiveId, ct);
+                return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (LibraryMismatchException ex)
+            {
+                problems.Add(ex.Message);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                problems.Add($"« {candidate} » : {ex.Message}");
+            }
+        }
+
+        var detail = problems.Count == 0
+            ? "Aucun chemin connu ne correspond à cette bibliothèque."
+            : string.Join(" ", problems);
+        throw new LibraryActivationException(
+            $"La bibliothèque visée par cette notification (identifiant {effectiveId.Value:D}) " +
+            $"est introuvable ou ne correspond plus au chemin mémorisé. {detail} " +
+            "Ouvrez-la depuis Réglages, puis cliquez à nouveau sur la notification.");
+    }
+
+    /// <summary>Libère la priorité d'activation une fois le jour affiché.</summary>
+    public void CompleteActivation() => _activationTarget = null;
+
+    private static string? FirstPath(params string?[] candidates)
+    {
+        foreach (var candidate in candidates)
+        {
+            var normalized = NormalizePath(candidate);
+            if (normalized is not null)
+            {
+                return normalized;
+            }
+        }
+
+        return null;
+    }
+
+    private static void AddPath(List<string> paths, string? candidate)
+    {
+        var normalized = NormalizePath(candidate);
+        if (normalized is not null
+            && !paths.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            paths.Add(normalized);
+        }
+    }
+
+    private static string? NormalizePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+    }
+
+    private static bool PathEquals(string? left, string? right)
+    {
+        var a = NormalizePath(left);
+        var b = NormalizePath(right);
+        return a is not null && b is not null && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task ReloadAsync(CancellationToken ct = default)
@@ -178,6 +431,15 @@ public sealed class AppState
     {
         var library = Library ?? throw new InvalidOperationException("Aucune bibliothèque n'est ouverte.");
         var epoch = _libraryEpoch;
+
+        // Le verrou couvre l'import, le rechargement et la préparation des
+        // miniatures : une seconde opération longue sur cette bibliothèque est
+        // refusée avec un message explicite, alors que les lectures restent
+        // disponibles. ImportService acquiert le même verrou de façon
+        // réentrante pour les appelants directs.
+        using var operation = LibraryOperationGate.Acquire(
+            library.Info.RootPath,
+            LibraryOperationKind.Import);
 
         var result = await library.Import.RunAsync(new ImportRequest(spaceId, paths), progress, ct);
         if (!IsCurrent(library, epoch))
@@ -651,14 +913,21 @@ public sealed class AppState
 
     public async Task SetTimeZoneAsync(string timeZoneId, CancellationToken ct = default)
     {
-        Settings = Settings with { TimeZoneId = timeZoneId };
         var library = Library;
         if (library is null)
         {
+            Settings = Settings with { TimeZoneId = timeZoneId };
             return;
         }
 
+        // Rien n'est modifié si une autre opération longue est déjà en cours :
+        // le réglage en mémoire et le catalogue restent cohérents.
+        using var operation = LibraryOperationGate.Acquire(
+            library.Info.RootPath,
+            LibraryOperationKind.TimeZoneChange);
+
         var epoch = _libraryEpoch;
+        Settings = Settings with { TimeZoneId = timeZoneId };
         await library.Settings.SaveAsync(Settings, ct);
         await library.Catalog.RecalculateClassificationAsync(timeZoneId, ct);
         if (!IsCurrent(library, epoch))
@@ -682,8 +951,35 @@ public sealed class AppState
     /// Restaure une sauvegarde dans un dossier neuf. Ne dépend pas de la
     /// bibliothèque ouverte : le premier lancement peut donc restaurer.
     /// </summary>
-    public Task RestoreAsync(string zipPath, string destinationRoot, IProgress<string>? progress = null, CancellationToken ct = default)
-        => BackupRestoreService.RestoreAsync(zipPath, destinationRoot, progress, ct);
+    public async Task RestoreAsync(
+        string zipPath,
+        string destinationRoot,
+        IProgress<string>? progress = null,
+        CancellationToken ct = default)
+    {
+        // La restauration écrit un dossier complet et peut durer longtemps :
+        // elle participe au même verrou, indexé par le dossier de destination.
+        using var operation = LibraryOperationGate.Acquire(
+            destinationRoot,
+            LibraryOperationKind.Restore);
+
+        await BackupRestoreService.RestoreAsync(zipPath, destinationRoot, progress, ct);
+    }
+
+    /// <summary>
+    /// Acquiert le verrou unique pour une analyse locale (OCR, empreinte
+    /// visuelle, visages). À libérer avec <c>using</c> à la fin de la passe.
+    /// Une analyse lancée pendant un import ou un changement de fuseau reçoit
+    /// un message explicite au lieu de s'exécuter en parallèle.
+    /// </summary>
+    public LibraryOperationLease AcquireAnalysisLease()
+    {
+        var library = Library
+            ?? throw new InvalidOperationException("Aucune bibliothèque n'est ouverte.");
+        return LibraryOperationGate.Acquire(
+            library.Info.RootPath,
+            LibraryOperationKind.Analysis);
+    }
 
     public string? ThumbnailFor(long memoryId)
     {
@@ -775,40 +1071,289 @@ public sealed class AppState
 
     public static readonly System.Globalization.CultureInfo French = System.Globalization.CultureInfo.GetCultureInfo("fr-FR");
 
+    private static readonly JsonSerializerOptions AppStateJson = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
+
     public static string LastLibraryPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Memo", "app.json");
 
+    /// <summary>
+    /// Mémorise la dernière bibliothèque ouverte. L'identifiant et le nom sont
+    /// conservés dans un index local pour retrouver une bibliothèque par son
+    /// identifiant, même si le chemin mémorisé a changé depuis.
+    /// </summary>
     public void RememberLibrary(string path)
     {
-        try
+        var full = NormalizePath(path) ?? path;
+        UpdateAppDocument(document =>
         {
-            var file = LastLibraryPath;
-            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-            File.WriteAllText(file, JsonSerializer.Serialize(new { lastLibrary = path }));
+            document.LastLibrary = full;
+            if (Library is not null && PathEquals(Library.Info.RootPath, full))
+            {
+                UpsertLibrary(document, Library.Info.Id, full, Library.Info.Name);
+            }
+        });
+    }
+
+    private void RememberLibrary(Guid id, string path, string name)
+    {
+        var full = NormalizePath(path) ?? path;
+        UpdateAppDocument(document =>
+        {
+            document.LastLibrary = full;
+            UpsertLibrary(document, id, full, name);
+        });
+    }
+
+    /// <summary>
+    /// Enregistre seulement la correspondance identifiant → chemin, sans
+    /// changer la dernière bibliothèque ouverte. Utilisé par le planificateur
+    /// et le runner de rappels pour qu'un clic puisse retrouver la bibliothèque
+    /// par son identifiant, même si elle n'a jamais été ouverte depuis la mise
+    /// à jour.
+    /// </summary>
+    public void RememberLibraryLocation(Guid id, string path, string? name = null)
+    {
+        if (id == Guid.Empty)
+        {
+            return;
         }
-        catch
+
+        var full = NormalizePath(path) ?? path;
+        UpdateAppDocument(document => UpsertLibrary(document, id, full, name));
+    }
+
+    public static string? ReadLastLibrary() => ReadAppDocument().LastLibrary;
+
+    /// <summary>
+    /// Chemin le plus récemment connu pour une bibliothèque donnée, ou null.
+    /// Sert à résoudre une activation de notification par identifiant.
+    /// </summary>
+    public static string? FindKnownLibraryPath(Guid libraryId)
+    {
+        var document = ReadAppDocument();
+        foreach (var entry in document.Libraries
+                     .Where(entry => entry.Id == libraryId && !string.IsNullOrWhiteSpace(entry.Path))
+                     .OrderByDescending(entry => entry.LastOpenedAt))
         {
-            // mémorisation best-effort
+            var path = NormalizePath(entry.Path);
+            if (path is not null)
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    private static void UpsertLibrary(AppDocument document, Guid id, string path, string? name)
+    {
+        // Un enregistrement sans nom (planificateur, runner) ne doit pas
+        // effacer un nom déjà connu.
+        var knownName = document.Libraries.FirstOrDefault(entry => entry.Id == id)?.Name;
+
+        // Une même bibliothèque ne doit apparaître qu'une fois par identifiant
+        // ou par chemin, même après un déplacement ou un renommage de dossier.
+        document.Libraries.RemoveAll(entry =>
+            entry.Id == id || PathEquals(entry.Path, path));
+
+        document.Libraries.Add(new LibraryEntry
+        {
+            Id = id,
+            Path = path,
+            Name = name ?? knownName,
+            LastOpenedAt = DateTimeOffset.UtcNow,
+        });
+
+        // Index borné : les bibliothèques anciennes restent retrouvables via
+        // leur chemin direct sans faire grossir indéfiniment app.json.
+        if (document.Libraries.Count > 12)
+        {
+            document.Libraries = document.Libraries
+                .OrderByDescending(entry => entry.LastOpenedAt)
+                .Take(12)
+                .ToList();
         }
     }
 
-    public static string? ReadLastLibrary()
+    private static AppDocument ReadAppDocument()
     {
         try
         {
             var file = LastLibraryPath;
             if (!File.Exists(file))
             {
-                return null;
+                return new AppDocument();
             }
-            using var document = JsonDocument.Parse(File.ReadAllText(file));
-            return document.RootElement.TryGetProperty("lastLibrary", out var property) ? property.GetString() : null;
+
+            using var json = JsonDocument.Parse(File.ReadAllText(file));
+            if (json.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new AppDocument();
+            }
+
+            var document = new AppDocument();
+            if (TryGetProperty(json.RootElement, "lastLibrary", out var lastLibrary)
+                && lastLibrary.ValueKind == JsonValueKind.String)
+            {
+                document.LastLibrary = lastLibrary.GetString();
+            }
+
+            if (TryGetProperty(json.RootElement, "libraries", out var libraries)
+                && libraries.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in libraries.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object
+                        || !TryGetProperty(item, "id", out var idElement)
+                        || idElement.ValueKind != JsonValueKind.String
+                        || !Guid.TryParse(idElement.GetString(), out var id)
+                        || id == Guid.Empty
+                        || !TryGetProperty(item, "path", out var pathElement)
+                        || pathElement.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var path = pathElement.GetString();
+                    if (string.IsNullOrWhiteSpace(path))
+                    {
+                        continue;
+                    }
+
+                    var name = TryGetProperty(item, "name", out var nameElement)
+                        && nameElement.ValueKind == JsonValueKind.String
+                            ? nameElement.GetString()
+                            : null;
+                    var lastOpenedAt = DateTimeOffset.MinValue;
+                    if (TryGetProperty(item, "lastOpenedAt", out var openedElement)
+                        && openedElement.ValueKind == JsonValueKind.String)
+                    {
+                        DateTimeOffset.TryParse(
+                            openedElement.GetString(),
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            System.Globalization.DateTimeStyles.RoundtripKind,
+                            out lastOpenedAt);
+                    }
+
+                    document.Libraries.Add(new LibraryEntry
+                    {
+                        Id = id,
+                        Path = path,
+                        Name = name,
+                        LastOpenedAt = lastOpenedAt,
+                    });
+                }
+            }
+
+            return document;
         }
         catch
         {
-            return null;
+            // Un app.json absent ou illisible retombe sur un document vide.
+            return new AppDocument();
         }
     }
+
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static readonly object AppDocumentGate = new();
+
+    /// <summary>
+    /// Lecture-modification-écriture sérialisée dans le processus : deux
+    /// opérations concurrentes (ouverture de bibliothèque, runner de rappels)
+    /// ne se perdent pas mutuellement. Entre processus, l'écriture atomique
+    /// reste « dernier gagnant ».
+    /// </summary>
+    private static void UpdateAppDocument(Action<AppDocument> update)
+    {
+        try
+        {
+            lock (AppDocumentGate)
+            {
+                var document = ReadAppDocument();
+                update(document);
+                WriteAppDocument(document);
+            }
+        }
+        catch
+        {
+            // mémorisation best-effort : un app.json invalide ne doit jamais
+            // empêcher d'ouvrir une bibliothèque.
+        }
+    }
+
+    private static void WriteAppDocument(AppDocument document)
+    {
+        var file = LastLibraryPath;
+        var temporary = file + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            var directory = Path.GetDirectoryName(file);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.WriteAllText(temporary, JsonSerializer.Serialize(document, AppStateJson));
+            File.Move(temporary, file, overwrite: true);
+        }
+        catch
+        {
+            // mémorisation best-effort
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporary))
+                {
+                    File.Delete(temporary);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private sealed class AppDocument
+    {
+        public string? LastLibrary { get; set; }
+        public List<LibraryEntry> Libraries { get; set; } = new();
+    }
+
+    private sealed class LibraryEntry
+    {
+        public Guid Id { get; set; }
+        public string? Path { get; set; }
+        public string? Name { get; set; }
+        public DateTimeOffset LastOpenedAt { get; set; }
+    }
+
+    /// <summary>Bibliothèque visée par une activation de notification.</summary>
+    private sealed record ActivationTarget(
+        Guid? LibraryId,
+        string? LibraryPath,
+        DateTimeOffset ExpiresAt);
 
     /// <summary>Instantané complet d'une bibliothèque, chargé hors de l'état courant.</summary>
     private sealed record LibrarySnapshot(
@@ -965,5 +1510,37 @@ public sealed class AppState
             index++;
         }
         target.Insert(index, item);
+    }
+}
+
+/// <summary>
+/// Le chemin mémorisé contient une autre bibliothèque que celle visée par une
+/// notification. L'ouverture est refusée avant toute bascule d'état.
+/// </summary>
+public sealed class LibraryMismatchException : InvalidOperationException
+{
+    public LibraryMismatchException(string path, Guid expected, Guid actual)
+        : base($"Le chemin « {path} » contient la bibliothèque {actual:D}, " +
+               $"alors que l'opération vise {expected:D}. " +
+               "La bibliothèque trouvée n'a pas été ouverte.")
+    {
+        Path = path;
+        Expected = expected;
+        Actual = actual;
+    }
+
+    public string Path { get; }
+    public Guid Expected { get; }
+    public Guid Actual { get; }
+}
+
+/// <summary>
+/// Aucune bibliothèque ne correspond à l'activation : le message est destiné à
+/// être affiché à l'utilisateur.
+/// </summary>
+public sealed class LibraryActivationException : InvalidOperationException
+{
+    public LibraryActivationException(string message) : base(message)
+    {
     }
 }

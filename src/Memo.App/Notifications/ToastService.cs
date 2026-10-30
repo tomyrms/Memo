@@ -7,10 +7,17 @@ namespace Memo.App.Notifications;
 /// <summary>
 /// Charge utile d'une notification activée par l'utilisateur. Le jour est
 /// toujours exprimé en ISO 8601 (yyyy-MM-dd), jamais avec un libellé localisé.
+/// L'identifiant de bibliothèque est un GUID opaque : il permet de rouvrir la
+/// bonne bibliothèque même si le chemin mémorisé a changé depuis l'affichage
+/// de la notification.
 /// </summary>
-public sealed record ToastActivation(DateOnly? Day, string? LocalPath)
+public sealed record ToastActivation(DateOnly? Day, string? LocalPath, Guid? LibraryId = null)
 {
     public string? DayText => Day?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>Clé de déduplication stable pour une activation.</summary>
+    internal string DedupeKey =>
+        (DayText ?? "-") + "|" + (LibraryId?.ToString("D") ?? "-") + "|" + (LocalPath ?? "-");
 }
 
 public sealed class ToastActivatedEventArgs : EventArgs
@@ -36,8 +43,9 @@ public sealed class ToastActivatedEventArgs : EventArgs
 /// Notifications Windows locales via Microsoft.Windows.AppNotifications.
 ///
 /// Aucune donnée personnelle n'est placée dans la charge utile : seuls le jour
-/// (yyyy-MM-dd) et une action d'ouverture sont transmis. Le nom de la
-/// bibliothèque, les lieux et les personnes ne sortent jamais de Memo.
+/// (yyyy-MM-dd), une action d'ouverture et l'identifiant opaque de la
+/// bibliothèque sont transmis. Le nom de la bibliothèque, son chemin, les
+/// lieux et les personnes ne sortent jamais de Memo.
 /// L'événement <see cref="Activated"/> est levé sur le thread du callback WinRT ;
 /// l'appelant doit revenir sur le thread UI avec son DispatcherQueue.
 /// </summary>
@@ -163,25 +171,34 @@ public sealed class ToastService
         DateOnly day,
         int memoryCount,
         string? thumbnailPath = null,
-        CancellationToken ct = default)
-        => ShowDailyMemoryAsync(day, memoryCount, discreet: false, thumbnailPath, ct);
+        CancellationToken ct = default,
+        Guid? libraryId = null)
+        => ShowDailyMemoryAsync(day, memoryCount, discreet: false, thumbnailPath, ct, libraryId);
 
     /// <summary>
     /// Affiche le rappel quotidien. En mode discret, aucune miniature, aucun
-    /// lieu et aucun libellé personnel ne sont utilisés.
+    /// lieu et aucun libellé personnel ne sont utilisés. L'identifiant de
+    /// bibliothèque reste une valeur opaque, indispensable pour rouvrir la
+    /// bonne bibliothèque au clic.
     /// </summary>
     public Task<bool> ShowDailyMemoryAsync(
         DateOnly day,
         int memoryCount,
         bool discreet,
         string? thumbnailPath = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Guid? libraryId = null)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(ShowDailyMemoryCore(day, memoryCount, discreet, thumbnailPath));
+        return Task.FromResult(ShowDailyMemoryCore(day, memoryCount, discreet, thumbnailPath, libraryId));
     }
 
-    private bool ShowDailyMemoryCore(DateOnly day, int memoryCount, bool discreet, string? thumbnailPath)
+    private bool ShowDailyMemoryCore(
+        DateOnly day,
+        int memoryCount,
+        bool discreet,
+        string? thumbnailPath,
+        Guid? libraryId)
     {
         if (memoryCount <= 0)
         {
@@ -207,6 +224,14 @@ public sealed class ToastService
                 .AddArgument("day", dayText)
                 .SetGroup(GroupName)
                 .SetTag("d-" + day.ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+
+            // Identifiant opaque de la bibliothèque : il permet au clic de
+            // retrouver la bonne bibliothèque sans dépendre du dernier chemin
+            // mémorisé. Aucun chemin ni nom n'est transmis.
+            if (libraryId is Guid id)
+            {
+                builder.AddArgument("libraryId", id.ToString("D", CultureInfo.InvariantCulture));
+            }
 
             if (discreet)
             {
@@ -258,7 +283,7 @@ public sealed class ToastService
     /// </summary>
     internal void RaiseActivated(ToastActivation activation)
     {
-        var key = activation.DayText ?? activation.LocalPath ?? string.Empty;
+        var key = activation.DedupeKey;
         var now = DateTimeOffset.UtcNow;
 
         lock (Gate)
@@ -386,7 +411,7 @@ public sealed class ToastService
         }
 
         DateOnly? day = null;
-        if (arguments.TryGetValue("day", out var dayText)
+        if (TryGetArgument(arguments, "day", out var dayText)
             && DateOnly.TryParseExact(
                 dayText,
                 "yyyy-MM-dd",
@@ -397,8 +422,10 @@ public sealed class ToastService
             day = parsedDay;
         }
 
+        // Chemin historique : Memo n'en écrit plus, mais une notification créée
+        // par une version antérieure peut encore en contenir.
         string? localPath = null;
-        if (arguments.TryGetValue("library", out var rawPath)
+        if (TryGetArgument(arguments, "library", out var rawPath)
             && !string.IsNullOrWhiteSpace(rawPath)
             && Path.IsPathFullyQualified(rawPath))
         {
@@ -412,7 +439,35 @@ public sealed class ToastService
             }
         }
 
-        return day is null && localPath is null ? null : new ToastActivation(day, localPath);
+        Guid? libraryId = null;
+        if (TryGetArgument(arguments, "libraryId", out var rawId)
+            && Guid.TryParse(rawId, out var parsedId)
+            && parsedId != Guid.Empty)
+        {
+            libraryId = parsedId;
+        }
+
+        return day is null && localPath is null && libraryId is null
+            ? null
+            : new ToastActivation(day, localPath, libraryId);
+    }
+
+    private static bool TryGetArgument(
+        IDictionary<string, string> arguments,
+        string name,
+        out string value)
+    {
+        foreach (var pair in arguments)
+        {
+            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = pair.Value;
+                return true;
+            }
+        }
+
+        value = string.Empty;
+        return false;
     }
 
     private static Uri ToFileUri(string path)

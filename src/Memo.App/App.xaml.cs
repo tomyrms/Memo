@@ -1,5 +1,6 @@
 using System.Globalization;
 using Memo.App.Notifications;
+using Memo.App.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
@@ -15,6 +16,8 @@ public partial class App : Application
     private static readonly TimeSpan ActivationDedupeWindow = TimeSpan.FromSeconds(3);
 
     public static MainWindow? MainWindow { get; private set; }
+
+    private readonly SemaphoreSlim _activationGate = new(1, 1);
 
     private MainWindow? _window;
     private AppInstance? _instance;
@@ -98,18 +101,53 @@ public partial class App : Application
                 argv,
                 raiseActivationEvent: false);
 
+            var activation = startup.Kind == ReminderStartupKind.NotificationActivation
+                ? startup.Activation
+                : null;
+            string? activationError = null;
+
+            if (activation is not null)
+            {
+                // La cible est posée avant la création de la fenêtre pour que
+                // le chargement initial de la coquille ne rouvre pas une autre
+                // bibliothèque. L'ouverture et le chargement complet sont
+                // attendus ici : « Ce jour-là » ne sera calculé qu'ensuite.
+                AppState.Current.BeginActivation(activation.LibraryId, activation.LocalPath);
+                try
+                {
+                    await AppState.Current.EnsureActivationLibraryAsync(
+                        activation.LibraryId,
+                        activation.LocalPath);
+                }
+                catch (Exception ex)
+                {
+                    activationError = ex.Message;
+                    Log(ex);
+                    AppState.Current.CompleteActivation();
+                }
+            }
+
             var window = EnsureWindow();
             window.Activate();
 
-            if (startup.Kind == ReminderStartupKind.NotificationActivation
-                && startup.Activation?.Day is DateOnly day)
+            if (activationError is not null)
             {
-                ShowDayOnce(window, day);
+                window.ShowLibraryNotice("Bibliothèque introuvable", activationError);
+            }
+            else if (activation?.Day is DateOnly day)
+            {
+                ShowDayOnce(window, day, activation.LibraryId);
+            }
+            else if (activation is not null)
+            {
+                // Activation sans jour : la bibliothèque est déjà ouverte.
+                AppState.Current.CompleteActivation();
             }
         }
         catch (Exception ex)
         {
             Log(ex);
+            AppState.Current.CompleteActivation();
             EnsureWindow().Activate();
         }
     }
@@ -145,14 +183,8 @@ public partial class App : Application
     /// </summary>
     private void OnToastActivated(object? sender, ToastActivatedEventArgs e)
     {
-        if (e.Activation.Day is not DateOnly day)
-        {
-            // Charge utile sans jour : ne pas laisser le clic sans effet.
-            Dispatch(() => EnsureWindow().Activate());
-            return;
-        }
-
-        Dispatch(() => ShowDayOnce(EnsureWindow(), day));
+        var activation = e.Activation;
+        Dispatch(() => _ = HandleActivationAsync(activation));
     }
 
     /// <summary>
@@ -165,9 +197,9 @@ public partial class App : Application
             && args.Data is AppNotificationActivatedEventArgs notification)
         {
             var activation = ToastService.TryParseActivation(notification.Arguments);
-            if (activation?.Day is DateOnly day)
+            if (activation is not null)
             {
-                Dispatch(() => ShowDayOnce(EnsureWindow(), day));
+                Dispatch(() => _ = HandleActivationAsync(activation));
                 return;
             }
         }
@@ -175,9 +207,52 @@ public partial class App : Application
         Dispatch(() => EnsureWindow().Activate());
     }
 
-    private void ShowDayOnce(MainWindow window, DateOnly day)
+    /// <summary>
+    /// Ouvre la bibliothèque visée par la notification, attend son chargement
+    /// complet, puis seulement calcule et affiche « Ce jour-là ».
+    /// </summary>
+    private async Task HandleActivationAsync(ToastActivation activation)
     {
-        var key = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        await _activationGate.WaitAsync();
+        try
+        {
+            var window = EnsureWindow();
+            window.Activate();
+
+            AppState.Current.BeginActivation(activation.LibraryId, activation.LocalPath);
+            try
+            {
+                await AppState.Current.EnsureActivationLibraryAsync(
+                    activation.LibraryId,
+                    activation.LocalPath);
+            }
+            catch (Exception ex)
+            {
+                Log(ex);
+                AppState.Current.CompleteActivation();
+                window.ShowLibraryNotice("Bibliothèque introuvable", ex.Message);
+                return;
+            }
+
+            if (activation.Day is DateOnly day)
+            {
+                ShowDayOnce(window, day, activation.LibraryId);
+            }
+            else
+            {
+                AppState.Current.CompleteActivation();
+            }
+        }
+        finally
+        {
+            _activationGate.Release();
+        }
+    }
+
+    private void ShowDayOnce(MainWindow window, DateOnly day, Guid? libraryId)
+    {
+        var key = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+                  + "|" + (libraryId?.ToString("D", CultureInfo.InvariantCulture) ?? "-");
         var now = DateTimeOffset.UtcNow;
         if (string.Equals(_lastActivationKey, key, StringComparison.Ordinal)
             && now - _lastActivationAt < ActivationDedupeWindow)
@@ -188,7 +263,7 @@ public partial class App : Application
         _lastActivationKey = key;
         _lastActivationAt = now;
         window.Activate();
-        window.ShowDay(day);
+        window.ShowDay(day, libraryId);
     }
 
     private void Dispatch(Action action)
@@ -201,6 +276,8 @@ public partial class App : Application
         Log(new InvalidOperationException(
             "Activation de notification ignorée : file d'attente UI indisponible."));
     }
+
+    internal static void LogException(Exception? ex) => Log(ex);
 
     private static void Log(Exception? ex)
     {

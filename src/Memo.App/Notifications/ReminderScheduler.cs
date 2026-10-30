@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Memo.App.Services;
 
 namespace Memo.App.Notifications;
 
@@ -154,6 +155,11 @@ public static class ReminderScheduler
                 string.Empty,
                 $"Aucune bibliothèque Memo lisible dans « {root} » (library.json absent, illisible ou sans identifiant).");
         }
+
+        // Mémorise la correspondance identifiant → chemin pour que le clic sur
+        // une notification retrouve la bibliothèque par son identifiant, même
+        // si le dernier chemin mémorisé a changé depuis la planification.
+        AppState.Current.RememberLibraryLocation(libraryId.Value, root);
 
         var taskName = GetTaskName(libraryId.Value);
         var command = BuildTaskCommand(exe, root);

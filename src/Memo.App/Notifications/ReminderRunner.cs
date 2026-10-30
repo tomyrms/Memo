@@ -1,4 +1,5 @@
 using System.Globalization;
+using Memo.App.Services;
 using Memo.Core;
 using Microsoft.Windows.AppLifecycle;
 using Microsoft.Windows.AppNotifications;
@@ -239,6 +240,17 @@ public static class ReminderRunner
         try
         {
             await using var library = await MemoLibrary.OpenAsync(root, token).ConfigureAwait(false);
+
+            // Le chemin de cette bibliothèque est associé à son identifiant
+            // avant l'affichage : un clic sur la notification pourra la
+            // retrouver même si elle n'a jamais été ouverte par cette version.
+            // L'écriture reste best-effort et ne change pas la dernière
+            // bibliothèque ouverte.
+            AppState.Current.RememberLibraryLocation(
+                library.Info.Id,
+                library.Info.RootPath,
+                library.Info.Name);
+
             var settings = library.Settings.Current;
 
             if (!settings.RemindersEnabled && !options.IgnoreRemindersSetting)
@@ -310,7 +322,8 @@ public static class ReminderRunner
                     items.Count,
                     settings.DiscreetNotifications,
                     thumbnail,
-                    token)
+                    token,
+                    library.Info.Id)
                 .ConfigureAwait(false);
 
             if (!shown)
