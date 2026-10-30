@@ -154,6 +154,16 @@
                     </Style>
                 </GridView.ItemContainerStyle>
             </GridView>
+
+            <TextBlock
+                Margin="0,24,0,8"
+                Style="{StaticResource MemoSectionTextStyle}"
+                Text="Récapitulatifs enregistrés" />
+            <StackPanel x:Name="SavedRecaps" Orientation="Horizontal" Spacing="12" />
+            <TextBlock
+                x:Name="NoSavedRecaps"
+                Style="{StaticResource MemoCaptionTextStyle}"
+                Text="Aucun récapitulatif enregistré pour l’instant." />
         </StackPanel>
     </ScrollViewer>
 </Page>

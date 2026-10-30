@@ -18,7 +18,7 @@ public sealed partial class HomePage : Page
     {
         Root.Children.Clear();
         var state = AppState.Current;
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        var today = AppState.Current.Today;
 
         var head = new Grid { Margin = new Thickness(0, 0, 0, 24) };
         head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -141,7 +141,7 @@ public sealed partial class HomePage : Page
     {
         var state = AppState.Current;
         var days = state.Cards
-            .Where(c => !c.IsExcluded && c.LocalDate is not null)
+            .Where(c => !c.IsExcluded && c.DatePrecision >= DatePrecision.Day && c.LocalDate is not null)
             .GroupBy(c => c.LocalDate!.Value)
             .OrderBy(_ => Random.Shared.Next())
             .FirstOrDefault();
@@ -156,7 +156,7 @@ public sealed partial class HomePage : Page
     private static (DateOnly Day, List<MemoryCard> Cards)? PickDay(AppState state, DateOnly today)
     {
         var candidates = state.Cards
-            .Where(c => !c.IsExcluded && c.LocalDate is not null && c.LocalDate < today)
+            .Where(c => !c.IsExcluded && c.DatePrecision >= DatePrecision.Day && c.LocalDate is not null && c.LocalDate < today)
             .GroupBy(c => c.LocalDate!.Value)
             .Where(g => g.Count() >= 1)
             .OrderByDescending(g => g.Count())
@@ -242,4 +242,6 @@ public sealed partial class HomePage : Page
         return button;
     }
 }
+
+
 

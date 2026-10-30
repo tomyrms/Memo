@@ -18,6 +18,61 @@ public sealed partial class ImportService : IImportService
     private static readonly HashSet<string> SupportedExtensions =
         new(StringComparer.OrdinalIgnoreCase) { "jpg", "jpeg", "mp4", "png", "webp" };
 
+    private const int MaxArchiveEntries = 100_000;
+    private const long MaxArchiveUncompressedBytes = 40L * 1024 * 1024 * 1024;
+    private const long MaxEntryUncompressedBytes = 4L * 1024 * 1024 * 1024;
+    private const double MaxCompressionRatio = 1000.0;
+
+    private static bool ValidateArchiveLimits(ZipArchive archive, string path, ImportContext context)
+    {
+        if (archive.Entries.Count > MaxArchiveEntries)
+        {
+            context.AddError(
+                "archive.too-many-entries",
+                $"Archive refusée : {archive.Entries.Count} entrées dépassent la limite de {MaxArchiveEntries}.",
+                path);
+            return false;
+        }
+
+        long total = 0;
+        foreach (var entry in archive.Entries)
+        {
+            if (entry.Length > MaxEntryUncompressedBytes)
+            {
+                context.AddError(
+                    "archive.entry-too-large",
+                    $"Entrée refusée : {entry.FullName} dépasse la limite de {MaxEntryUncompressedBytes / (1024 * 1024 * 1024)} Gio.",
+                    path,
+                    entry.FullName);
+                return false;
+            }
+
+            if (entry.CompressedLength > 0 &&
+                entry.Length > 1024 * 1024 &&
+                entry.Length / (double)entry.CompressedLength > MaxCompressionRatio)
+            {
+                context.AddError(
+                    "archive.suspicious-ratio",
+                    $"Archive refusée : ratio de compression anormal pour {entry.FullName}.",
+                    path,
+                    entry.FullName);
+                return false;
+            }
+
+            total += entry.Length;
+            if (total > MaxArchiveUncompressedBytes)
+            {
+                context.AddError(
+                    "archive.too-large",
+                    $"Archive refusée : taille décompressée supérieure à {MaxArchiveUncompressedBytes / (1024 * 1024 * 1024)} Gio.",
+                    path);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private readonly MemoCatalog _catalog;
 
     internal ImportService(MemoCatalog catalog)
@@ -405,6 +460,11 @@ public sealed partial class ImportService : IImportService
 
         using (archive)
         {
+            if (!ValidateArchiveLimits(archive, input.Path, context))
+            {
+                return;
+            }
+
             var entryCount = archive.Entries.Count;
             var registration = await _catalog.RegisterArchiveAsync(
                 context.BatchId,

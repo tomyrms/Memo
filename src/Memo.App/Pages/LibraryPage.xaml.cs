@@ -351,7 +351,9 @@ public sealed partial class LibraryPage : Page
             DateSource.User => "Correction manuelle",
             _ => "Aucune date"
         });
-        Line("Provenance", "Jeu de démonstration synthétique");
+        Line("Provenance", AppState.Current.IsDemo
+            ? "Jeu de démonstration synthétique"
+            : AppState.Current.LibraryPath ?? "Bibliothèque locale");
         if (!string.IsNullOrWhiteSpace(card.LocationLabel))
         {
             Line("Lieu", card.LocationLabel);
@@ -414,9 +416,12 @@ public sealed partial class LibraryPage : Page
 
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            if (picker.Date is { } chosen)
+            var chosenDate = picker.Date is { } chosen
+                ? DateOnly.FromDateTime(chosen.Date)
+                : (DateOnly?)null;
+            if (chosenDate != card.LocalDate)
             {
-                await AppState.Current.SetDateOverrideAsync(card.Id, DateOnly.FromDateTime(chosen.Date));
+                await AppState.Current.SetDateOverrideAsync(card.Id, chosenDate);
             }
 
             double? lat = double.IsNaN(latitude.Value) ? null : latitude.Value;
@@ -447,6 +452,8 @@ public sealed partial class LibraryPage : Page
         public string Key { get; }
     }
 }
+
+
 
 
 

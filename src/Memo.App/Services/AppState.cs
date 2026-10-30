@@ -22,6 +22,7 @@ public sealed class AppState
 
     public ObservableCollection<MemoryCard> Cards { get; } = new();
     public ObservableCollection<CollectionInfo> Albums { get; } = new();
+    public ObservableCollection<CollectionInfo> Recaps { get; } = new();
     public AppSettings Settings { get; set; } = new(
         "Europe/Zurich", 4, true, true, false, false, "09:00", true,
         true, "System", false, false);
@@ -43,6 +44,7 @@ public sealed class AppState
         CurrentSpaceId = 0;
         Cards.Clear();
         Albums.Clear();
+        Recaps.Clear();
         _demoThumbnails.Clear();
         _demoMedia.Clear();
         _demoOverlays.Clear();
@@ -120,6 +122,12 @@ public sealed class AppState
         foreach (var album in await Library.Catalog.GetCollectionsAsync(CollectionKind.Album, ct))
         {
             Albums.Add(album);
+        }
+
+        Recaps.Clear();
+        foreach (var recap in await Library.Catalog.GetCollectionsAsync(CollectionKind.Recap, ct))
+        {
+            Recaps.Add(recap);
         }
 
         Settings = Library.Settings.Current;
@@ -340,6 +348,7 @@ public sealed class AppState
         }
         var collection = await Library.Catalog.CreateCollectionAsync(name, CollectionKind.Recap, ct);
         await Library.Catalog.AddToCollectionAsync(collection.Id, memoryIds, ct);
+        await ReloadAsync(ct);
     }
 
     public async Task SaveSettingsAsync(AppSettings settings, CancellationToken ct = default)
@@ -422,17 +431,33 @@ public sealed class AppState
 
     public IReadOnlyList<MemoryCard> ThisDay(DateOnly day)
         => Cards
-            .Where(c => !c.IsExcluded && c.LocalDate is { } d && d.Month == day.Month && d.Day == day.Day && d.Year < day.Year)
+            .Where(c => !c.IsExcluded && c.DatePrecision >= DatePrecision.Day && c.LocalDate is { } d && d.Month == day.Month && d.Day == day.Day && d.Year < day.Year)
             .OrderByDescending(c => c.LocalDate)
             .ToList();
 
     public IReadOnlyList<MemoryCard> OneYearAgo(DateOnly day)
         => Cards
-            .Where(c => !c.IsExcluded && c.LocalDate is { } d && d.Year == day.Year - 1 && d.Month == day.Month && d.Day == day.Day)
+            .Where(c => !c.IsExcluded && c.DatePrecision >= DatePrecision.Day && c.LocalDate is { } d && d.Year == day.Year - 1 && d.Month == day.Month && d.Day == day.Day)
             .ToList();
 
     public IReadOnlyList<MemoryCard> Undated()
         => Cards.Where(c => c.LocalDate is null).ToList();
+
+    public DateOnly Today
+    {
+        get
+        {
+            try
+            {
+                var zone = TimeZoneInfo.FindSystemTimeZoneById(Settings.TimeZoneId);
+                return DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).DateTime);
+            }
+            catch
+            {
+                return DateOnly.FromDateTime(DateTime.Now);
+            }
+        }
+    }
 
     public string FormatDate(MemoryCard card)
         => card.LocalDate is { } d ? d.ToDateTime(TimeOnly.MinValue).ToString("d MMMM yyyy", French) : "Date inconnue";
@@ -485,6 +510,10 @@ public sealed class AppState
         }
     }
 }
+
+
+
+
 
 
 

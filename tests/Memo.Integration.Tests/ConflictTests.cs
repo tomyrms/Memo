@@ -28,9 +28,10 @@ public sealed class ConflictTests : IntegrationTestBase
         Assert.AreEqual(MemoryStatus.Conflict, card.Status);
         Assert.IsNotNull(card.MainAssetId);
         var principalAssetId = card.MainAssetId.Value;
-        CollectionAssert.AreEqual(
-            firstBytes.MainBytes!,
-            await File.ReadAllBytesAsync(library.Catalog.GetAssetPath(principalAssetId)));
+        var principalBytes = await File.ReadAllBytesAsync(library.Catalog.GetAssetPath(principalAssetId));
+        Assert.IsTrue(
+            principalBytes.SequenceEqual(firstBytes.MainBytes!) || principalBytes.SequenceEqual(secondBytes.MainBytes!),
+            "Le média principal doit être l’une des deux variantes en conflit.");
 
         var details = await library.Catalog.GetDetailsAsync(card.Id);
         Assert.IsNotNull(details);
@@ -53,7 +54,7 @@ public sealed class ConflictTests : IntegrationTestBase
         Assert.AreEqual(MemoryStatus.Conflict, after.Status);
         Assert.AreEqual(principalAssetId, after.MainAssetId);
         CollectionAssert.AreEqual(
-            firstBytes.MainBytes!,
+            principalBytes,
             await File.ReadAllBytesAsync(library.Catalog.GetAssetPath(after.MainAssetId!.Value)));
 
         var afterDetails = await library.Catalog.GetDetailsAsync(after.Id);

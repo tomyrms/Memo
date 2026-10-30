@@ -44,7 +44,7 @@ public sealed partial class MemoCatalog
         ,
         main_ranked AS (
             SELECT mf.memory_id, a.id AS asset_id, mf.source_file_id,
-                   ROW_NUMBER() OVER (PARTITION BY mf.memory_id ORDER BY mf.source_file_id ASC) AS rn
+                   ROW_NUMBER() OVER (PARTITION BY mf.memory_id ORDER BY a.sha256 ASC, mf.source_file_id ASC) AS rn
               FROM memory_files mf
               JOIN source_files sf ON sf.id = mf.source_file_id
               JOIN assets a ON a.sha256 = sf.sha256
@@ -52,7 +52,7 @@ public sealed partial class MemoCatalog
         ),
         overlay_ranked AS (
             SELECT mf.memory_id, a.id AS asset_id, mf.source_file_id,
-                   ROW_NUMBER() OVER (PARTITION BY mf.memory_id ORDER BY mf.source_file_id ASC) AS rn
+                   ROW_NUMBER() OVER (PARTITION BY mf.memory_id ORDER BY a.sha256 ASC, mf.source_file_id ASC) AS rn
               FROM memory_files mf
               JOIN source_files sf ON sf.id = mf.source_file_id
               JOIN assets a ON a.sha256 = sf.sha256
@@ -1019,3 +1019,4 @@ public sealed partial class MemoCatalog
         await transaction.CommitAsync(ct).ConfigureAwait(false);
     }
 }
+

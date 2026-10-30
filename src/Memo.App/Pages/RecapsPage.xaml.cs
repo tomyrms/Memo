@@ -22,6 +22,7 @@ public sealed partial class RecapsPage : Page
             _ready = true;
             BuildPeriods();
             Generate();
+            RefreshSavedRecaps();
         };
     }
 
@@ -176,6 +177,44 @@ public sealed partial class RecapsPage : Page
         Notice.IsOpen = false;
     }
 
+    private void RefreshSavedRecaps()
+    {
+        SavedRecaps.Children.Clear();
+        var recaps = AppState.Current.Recaps;
+        NoSavedRecaps.Visibility = recaps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var recap in recaps)
+        {
+            var panel = new StackPanel { Width = 220, Spacing = 6 };
+            var cover = new Border
+            {
+                Height = 120,
+                CornerRadius = new CornerRadius(4),
+                Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["MemoPhotoPlaceholderBrush"]
+            };
+            if (recap.CoverThumbnail is not null && File.Exists(recap.CoverThumbnail))
+            {
+                cover.Child = new Image
+                {
+                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(recap.CoverThumbnail)),
+                    Stretch = Microsoft.UI.Xaml.Media.Stretch.UniformToFill
+                };
+            }
+            panel.Children.Add(cover);
+            panel.Children.Add(new TextBlock { Text = recap.Name, Style = Widgets.Style("MemoBodyTextStyle"), TextTrimming = TextTrimming.CharacterEllipsis });
+            panel.Children.Add(new TextBlock { Text = $"{recap.ItemCount} souvenir(s)", Style = Widgets.Style("MemoCaptionTextStyle") });
+            var button = new Button { Content = panel, Style = Widgets.Style("MemoTileButtonStyle"), Padding = new Thickness(0) };
+            button.Click += async (_, _) => await LoadRecapAsync(recap);
+            SavedRecaps.Children.Add(button);
+        }
+    }
+
+    private async Task LoadRecapAsync(CollectionInfo recap)
+    {
+        _selection = (await AppState.Current.GetAlbumItemsAsync(recap.Id)).ToList();
+        _period = (recap.Name, recap.FirstDate ?? new DateOnly(1970, 1, 1), recap.LastDate ?? new DateOnly(2100, 1, 1));
+        Render();
+    }
+
     private void OnPlay(object sender, RoutedEventArgs e)
     {
         if (_selection.Count > 0)
@@ -253,8 +292,11 @@ public sealed partial class RecapsPage : Page
         Notice.Message = $"« {name} » est conservé dans Albums et Récapitulatifs. Il reste modifiable.";
         Notice.Severity = InfoBarSeverity.Success;
         Notice.IsOpen = true;
+        RefreshSavedRecaps();
     }
 }
+
+
 
 
 
