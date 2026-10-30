@@ -45,6 +45,7 @@ Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 - **Récapitulatifs** : les périodes proposées dépendent des années réellement datées ; aucune génération inventée pour les médias absents.
 - **Export** : H.264 via Media Foundation ; Windows N nécessite le Media Feature Pack. L'enregistrement du média courant, lui, ne réencode rien.
 - **Rappels** : la tâche ne s'exécute que si Windows est allumé et l'utilisateur connecté ; l'affichage du toast dépend des réglages Windows.
+- **Import** : la bascule vers un autre disque conserve la sélection d'archives par instantané, mais le parcours complet 17 ZIP → nouveau disque reste à rejouer manuellement sur l'export réel.
 - **ARM64** non pris en charge.
 - **Licence du code Memo** : à définir avant diffusion sous licence.
 
@@ -53,6 +54,7 @@ Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 - Build Release, tests Core/Media, import UI de 6 ZIP (22 souvenirs), sauvegarde/restauration de 23 souvenirs, analyse locale (13 OCR, 13 empreintes), lecture HEVC et photo avec calque, export MP4 auto-vérifié.
 - Installateur 0.1.0 reconstruit après la passe de correction : installation silencieuse dans `%LOCALAPPDATA%\Programs\Memo`, démarrage réel de la version installée sur la bibliothèque de 838 souvenirs, désinstallation silencieuse sans résidu du dossier d'installation.
 - Publication vérifiée : `Memo.pri` et 17 fichiers `.xbf` présents avant compilation de l'installateur.
+- Dialogue « Choisir un autre disque » vérifié à l'écran : liste des disques avec espace libre, nom de dossier, aperçu du chemin et création d'une bibliothèque sur `X:`.
 - Captures d'écran des écrans principaux en 1320×860 et 1040×1800.
 
 ## Artefacts
