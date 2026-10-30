@@ -110,7 +110,7 @@ try {
 
         Write-Host ''
         Write-Host 'Build Release (artefacts XAML)...' -ForegroundColor Cyan
-        & dotnet build $projectPath -c Release -p:Platform=x64
+        & dotnet build $projectPath -c Release
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet build a échoué (code $LASTEXITCODE)."
         }
@@ -141,6 +141,7 @@ try {
     $buildOutput = Get-ChildItem (Join-Path $repoRoot 'src\Memo.App\bin\Release') -Directory |
         ForEach-Object { Join-Path $_.FullName 'win-x64' } |
         Where-Object { Test-Path -LiteralPath (Join-Path $_ 'Memo.pri') } |
+        Sort-Object { (Get-Item -LiteralPath (Join-Path $_ 'Memo.dll')).LastWriteTime } -Descending |
         Select-Object -First 1
     if (-not $buildOutput) {
         throw "Sortie de build Release introuvable : impossible de copier les artefacts XAML."

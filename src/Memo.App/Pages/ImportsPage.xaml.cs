@@ -625,7 +625,7 @@ public sealed partial class ImportsPage : Page
         }
 
         var drives = DriveInfo.GetDrives()
-            .Where(drive => drive.IsReady && drive.DriveType is DriveType.Fixed or DriveType.Removable)
+            .Where(drive => drive.IsReady && drive.DriveType is DriveType.Fixed or DriveType.Removable or DriveType.Network)
             .OrderBy(drive => drive.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (drives.Count == 0)

@@ -22,7 +22,7 @@ Application WinUI 3 fonctionnelle sur bibliothèque réelle : import multi-ZIP e
 - `Memo.Integration.Tests` : import de bout en bout. **12 tests**.
 - Corpus synthétique déterministe + documentation de format.
 - UI : 11 écrans, design system, états vides/chargement/erreur/désactivé, captures en 1320×860 et 1040×1800.
-- Import : sélection de plusieurs ZIP ou d'un dossier, contrôle de l'espace disque, reprise, diagnostic des chemins disparus.
+- Import : sélection de plusieurs ZIP ou d'un dossier, contrôle de l'espace disque, reprise, diagnostic des chemins disparus. Le disque de la bibliothèque se choisit depuis l'écran Imports, avec conservation de la sélection et reprise d'une bibliothèque Memo déjà présente.
 - Premier lancement : création/ouverture de bibliothèque réelle, restauration possible sans bibliothèque ouverte.
 - Lecteur Story : volume 0–100, muet synchronisé, heure exacte quand la précision le permet, enregistrement du média source sans réencodage, export de Story.
 - Recherche : mêmes champs dans Bibliothèque et Recherche (lieu, date, OCR, identifiant), accents/casse, debounce et annulation, ordre de similarité visuelle conservé.

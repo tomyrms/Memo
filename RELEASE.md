@@ -4,7 +4,7 @@ Première version publique de Memo, application Windows locale pour importer, co
 
 ## Points forts
 
-- **Import multi-ZIP et dossier complet** avec reprise, réimport sans doublon, espaces sources séparés, contrôle de l'espace disque et diagnostics par élément.
+- **Import multi-ZIP et dossier complet** avec reprise, réimport sans doublon, espaces sources séparés, contrôle de l'espace disque et diagnostics par élément. Le disque de la bibliothèque se choisit directement depuis l'écran Imports, sans perdre la sélection d'archives.
 - **Bibliothèque réelle** : catalogue SQLite versionné, photos et vidéos, dates avec provenance, correction manuelle, fuseau de classement.
 - **Galerie chronologique** par mois, filtres, vue « Date inconnue », éléments à compléter.
 - **Lecteur Story** photo/vidéo avec calques alignés, progression, clavier, volume 0–100, muet synchronisé, heure exacte quand elle est connue, lecture avec ou sans calque. Vidéo HEVC lue via LibVLC, sans dépendre de l'extension Microsoft.
