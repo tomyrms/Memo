@@ -50,7 +50,7 @@
                 Grid.Row="0"
                 Width="360"
                 HorizontalAlignment="Left"
-                PlaceholderText="Rechercher un lieu, une date, un texte OCR"
+                PlaceholderText="Lieu, date, texte reconnu, identifiant…"
                 QueryIcon="Find"
                 TextChanged="OnSearchChanged" />
             <StackPanel
