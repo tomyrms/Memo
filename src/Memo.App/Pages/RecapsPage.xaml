@@ -2,38 +2,132 @@
     x:Class="Memo.App.Pages.RecapsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:Memo.App.Controls"
     NavigationCacheMode="Required">
     <Page.Resources>
-        <DataTemplate x:Key="EditItemTemplate">
+        <!-- Candidats proposés à l'ajout : date et nature, sans miniature pour rester compact. -->
+        <DataTemplate x:Key="CandidateItemTemplate">
             <Grid ColumnSpacing="12" Padding="0,4">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="110" />
-                    <ColumnDefinition Width="60" />
+                    <ColumnDefinition Width="150" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <TextBlock
-                    Text="{Binding LocalDate}"
-                    Style="{StaticResource MemoSecondaryTextStyle}" />
+                    Text="{Binding DateLabel}"
+                    Style="{StaticResource MemoSecondaryTextStyle}"
+                    TextTrimming="CharacterEllipsis" />
                 <TextBlock
                     Grid.Column="1"
-                    Text="{Binding Kind}"
-                    Style="{StaticResource MemoCaptionTextStyle}" />
-                <TextBlock
-                    Grid.Column="2"
-                    Text="{Binding LocationLabel}"
+                    Text="{Binding DetailLabel}"
                     Style="{StaticResource MemoBodyTextStyle}"
                     TextTrimming="CharacterEllipsis" />
             </Grid>
         </DataTemplate>
+
+        <!-- Sélection ordonnée : chaque ligne expose ses propres boutons clavier. -->
+        <DataTemplate x:Key="SelectionItemTemplate">
+            <Grid ColumnSpacing="12" Padding="0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="32" />
+                    <ColumnDefinition Width="64" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock
+                    Text="{Binding PositionLabel}"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MemoNumericTextStyle}" />
+
+                <Border
+                    Grid.Column="1"
+                    Width="64"
+                    Height="64"
+                    Background="{ThemeResource MemoPhotoPlaceholderBrush}"
+                    CornerRadius="4">
+                    <Image
+                        Source="{Binding Thumbnail}"
+                        Stretch="UniformToFill" />
+                </Border>
+
+                <StackPanel
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Spacing="2">
+                    <TextBlock
+                        Text="{Binding DateLabel}"
+                        Style="{StaticResource MemoBodyTextStyle}"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        Text="{Binding DetailLabel}"
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+
+                <TextBlock
+                    Grid.Column="3"
+                    Margin="0,0,4,0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MemoCaptionTextStyle}"
+                    Text="{Binding DurationLabel}" />
+
+                <StackPanel
+                    Grid.Column="4"
+                    Orientation="Horizontal"
+                    Spacing="2">
+                    <Button
+                        Tag="up"
+                        Click="OnMoveUp"
+                        IsEnabled="{Binding CanMoveUp}"
+                        AutomationProperties.Name="{Binding MoveUpLabel}"
+                        AutomationProperties.HelpText="Déplace le souvenir d’une position vers le haut."
+                        Style="{StaticResource MemoQuietButtonStyle}"
+                        ToolTipService.ToolTip="Monter"
+                        Width="32"
+                        Height="32"
+                        Padding="0"
+                        VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE70E;" FontSize="13" />
+                    </Button>
+                    <Button
+                        Tag="down"
+                        Click="OnMoveDown"
+                        IsEnabled="{Binding CanMoveDown}"
+                        AutomationProperties.Name="{Binding MoveDownLabel}"
+                        AutomationProperties.HelpText="Déplace le souvenir d’une position vers le bas."
+                        Style="{StaticResource MemoQuietButtonStyle}"
+                        ToolTipService.ToolTip="Descendre"
+                        Width="32"
+                        Height="32"
+                        Padding="0"
+                        VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE70D;" FontSize="13" />
+                    </Button>
+                    <Button
+                        Tag="remove"
+                        Click="OnRemove"
+                        AutomationProperties.Name="{Binding RemoveLabel}"
+                        AutomationProperties.HelpText="Retire le souvenir de la sélection sans modifier le souvenir source."
+                        Style="{StaticResource MemoQuietButtonStyle}"
+                        ToolTipService.ToolTip="Retirer"
+                        Width="32"
+                        Height="32"
+                        Padding="0"
+                        VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE74D;" FontSize="13" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
     </Page.Resources>
+
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel MaxWidth="1240" Margin="32,24,32,32" HorizontalAlignment="Left" Spacing="16">
             <StackPanel Spacing="4">
                 <TextBlock Text="Récapitulatifs" Style="{StaticResource MemoTitleTextStyle}" />
                 <TextBlock
                     Style="{StaticResource MemoSecondaryTextStyle}"
-                    Text="Une sélection répartie sur une période, modifiable avant de la conserver." />
+                    Text="Une sélection répartie sur une période, réordonnable et vérifiable avant d’être conservée." />
             </StackPanel>
 
             <Grid ColumnSpacing="8">
@@ -70,6 +164,10 @@
                     Style="{StaticResource MemoCaptionTextStyle}" />
             </Grid>
 
+            <TextBlock
+                Style="{StaticResource MemoCaptionTextStyle}"
+                Text="Génération automatique : jusqu’à 12 souvenirs répartis sur la période, favoris prioritaires. Les souvenirs exclus et les médias sans date ne sont pas retenus ; les dates seulement connues au mois ou à l’année restent signalées comme approximatives." />
+
             <Border
                 MaxWidth="920"
                 HorizontalAlignment="Left"
@@ -93,8 +191,7 @@
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
                                     Style="{StaticResource MemoCaptionTextStyle}"
-                                    Text="Aperçu à générer"
-                                    Visibility="Collapsed" />
+                                    Text="Aucun souvenir sélectionné" />
                             </Grid>
                         </Border>
                         <Border
@@ -119,11 +216,19 @@
                         <TextBlock
                             x:Name="CoverageNote"
                             Style="{StaticResource MemoCaptionTextStyle}"
-                            Text="La couverture dépend des dates disponibles ; les médias non datés ne sont pas comptés." />
+                            Text="La couverture dépend des dates disponibles ; les souvenirs non datés ne sont jamais comptés." />
                         <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,10,0,0">
-                            <Button Click="OnPlay" Content="Lire la Story" Style="{StaticResource MemoPrimaryButtonStyle}" />
-                            <Button Click="OnEdit" Content="Modifier la sélection" Style="{StaticResource MemoSecondaryButtonStyle}" />
-                            <Button Click="OnSave" Content="Enregistrer" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                            <Button
+                                x:Name="SaveButton"
+                                Click="OnSave"
+                                Content="Prévisualiser et enregistrer"
+                                Style="{StaticResource MemoPrimaryButtonStyle}" />
+                            <Button Click="OnPlay" Content="Lire la Story" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                            <Button
+                                x:Name="AddButton"
+                                Click="OnEdit"
+                                Content="Ajouter des souvenirs"
+                                Style="{StaticResource MemoSecondaryButtonStyle}" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>
@@ -135,31 +240,100 @@
                 IsOpen="False"
                 Severity="Success" />
 
-            <GridView
-                x:Name="ItemsGrid"
-                IsItemClickEnabled="True"
-                ItemClick="OnItemClick"
-                SelectionMode="None">
-                <GridView.ItemTemplate>
-                    <DataTemplate>
-                        <controls:MemoryTile Card="{Binding}" ShowDate="True" />
-                    </DataTemplate>
-                </GridView.ItemTemplate>
-                <GridView.ItemContainerStyle>
-                    <Style TargetType="GridViewItem">
-                        <Setter Property="Margin" Value="0,0,8,8" />
-                        <Setter Property="Padding" Value="0" />
-                        <Setter Property="MinWidth" Value="0" />
-                        <Setter Property="MinHeight" Value="0" />
-                    </Style>
-                </GridView.ItemContainerStyle>
-            </GridView>
+            <Grid ColumnSpacing="20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="360" />
+                </Grid.ColumnDefinitions>
 
-            <TextBlock
-                Margin="0,24,0,8"
-                Style="{StaticResource MemoSectionTextStyle}"
-                Text="Récapitulatifs enregistrés" />
-            <StackPanel x:Name="SavedRecaps" Orientation="Horizontal" Spacing="12" />
+                <StackPanel Spacing="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Sélection modifiable" Style="{StaticResource MemoSectionTextStyle}" />
+                            <TextBlock
+                                x:Name="SelectionSummary"
+                                Style="{StaticResource MemoCaptionTextStyle}"
+                                Text="Chaque ligne peut être retirée ou déplacée avec les boutons." />
+                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            Click="OnSortByDate"
+                            Content="Trier par date"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource MemoQuietButtonStyle}" />
+                    </Grid>
+
+                    <ListView
+                        x:Name="SelectionList"
+                        MaxHeight="460"
+                        IsItemClickEnabled="False"
+                        SelectionMode="None"
+                        ItemTemplate="{StaticResource SelectionItemTemplate}"
+                        AutomationProperties.Name="Sélection du récapitulatif, dans l’ordre de la Story"
+                        AutomationProperties.HelpText="Utilisez les boutons Monter, Descendre et Retirer de chaque ligne.">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Margin" Value="0" />
+                                <Setter Property="Padding" Value="4,0" />
+                                <Setter Property="MinHeight" Value="0" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                    </ListView>
+
+                    <TextBlock
+                        x:Name="SelectionEmpty"
+                        Margin="4,8,0,0"
+                        Style="{StaticResource MemoSecondaryTextStyle}"
+                        Text="Aucun souvenir sélectionné. Générez une période ou ajoutez des souvenirs datés."
+                        Visibility="Collapsed" />
+                </StackPanel>
+
+                <Border
+                    Grid.Column="1"
+                    VerticalAlignment="Top"
+                    Style="{StaticResource MemoCardBorderStyle}"
+                    Padding="16">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="Aperçu avant enregistrement" Style="{StaticResource MemoSectionTextStyle}" />
+                        <TextBlock
+                            x:Name="PreviewOrigin"
+                            Style="{StaticResource MemoCaptionTextStyle}"
+                            Text="Nouvelle sélection" />
+                        <TextBlock
+                            x:Name="PreviewCounts"
+                            Style="{StaticResource MemoBodyTextStyle}"
+                            AutomationProperties.LiveSetting="Polite" />
+                        <TextBlock x:Name="PreviewDuration" Style="{StaticResource MemoSecondaryTextStyle}" />
+                        <TextBlock x:Name="PreviewCoverage" Style="{StaticResource MemoSecondaryTextStyle}" />
+                        <TextBlock x:Name="PreviewNotes" Style="{StaticResource MemoCaptionTextStyle}" />
+                        <Border Style="{StaticResource MemoDividerStyle}" Margin="0,4" />
+                        <TextBlock
+                            Style="{StaticResource MemoCaptionTextStyle}"
+                            Text="L’ordre de la liste est celui de la Story. L’enregistrement ouvre une confirmation avec l’ordre final, la durée estimée et la couverture." />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <StackPanel Spacing="2" Margin="0,8,0,0">
+                <TextBlock
+                    Style="{StaticResource MemoSectionTextStyle}"
+                    Text="Récapitulatifs enregistrés" />
+                <TextBlock
+                    Style="{StaticResource MemoCaptionTextStyle}"
+                    Text="Cliquez sur un récapitulatif pour le recharger : vous pourrez modifier l’ordre, le mettre à jour ou l’enregistrer comme nouvelle collection." />
+            </StackPanel>
+            <ScrollViewer
+                HorizontalScrollBarVisibility="Auto"
+                VerticalScrollBarVisibility="Disabled"
+                HorizontalScrollMode="Auto"
+                VerticalScrollMode="Disabled">
+                <StackPanel x:Name="SavedRecaps" Orientation="Horizontal" Spacing="12" />
+            </ScrollViewer>
             <TextBlock
                 x:Name="NoSavedRecaps"
                 Style="{StaticResource MemoCaptionTextStyle}"

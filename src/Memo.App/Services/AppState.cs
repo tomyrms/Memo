@@ -32,6 +32,8 @@ public sealed class AppState
     private readonly Dictionary<long, string> _demoThumbnails = new();
     private readonly Dictionary<long, string> _demoMedia = new();
     private readonly Dictionary<long, string> _demoOverlays = new();
+    // Récapitulatifs de démonstration conservés en mémoire, dans l'ordre enregistré.
+    private readonly Dictionary<long, List<long>> _demoRecapItems = new();
 
     // Index id -> position dans Cards, entretenu avec la collection pour que
     // les mises à jour incrémentales restent en O(1) par souvenir.
@@ -62,6 +64,7 @@ public sealed class AppState
         _demoThumbnails.Clear();
         _demoMedia.Clear();
         _demoOverlays.Clear();
+        _demoRecapItems.Clear();
 
         ReplaceAllCards(DemoData.CreateCards());
         Reset(Albums, Array.Empty<CollectionInfo>());
@@ -496,6 +499,15 @@ public sealed class AppState
         var library = Library;
         if (library is null)
         {
+            // Un récapitulatif de démonstration conserve son propre ordre ; les albums
+            // historiques gardent l'ordre chronologique de la bibliothèque.
+            if (_demoRecapItems.TryGetValue(albumId, out var recapIds))
+            {
+                return recapIds
+                    .Select(id => Cards.FirstOrDefault(c => c.Id == id))
+                    .OfType<MemoryCard>()
+                    .ToList();
+            }
             var ids = DemoData.AlbumMembers(albumId);
             return Cards.Where(c => ids.Contains(c.Id)).ToList();
         }
@@ -519,23 +531,112 @@ public sealed class AppState
             new MemoryQuery(SearchText: query, IncludeExcluded: true, IncludeUndated: true, Limit: 500), ct);
     }
 
-    public async Task SaveRecapAsync(string name, IReadOnlyList<long> memoryIds, CancellationToken ct = default)
+    public async Task<CollectionInfo?> SaveRecapAsync(string name, IReadOnlyList<long> memoryIds, CancellationToken ct = default)
     {
         var library = Library;
         if (library is null)
         {
-            return;
+            var id = NextDemoRecapId();
+            var info = BuildDemoRecap(id, name, memoryIds);
+            _demoRecapItems[id] = memoryIds.Distinct().ToList();
+            Recaps.Add(info);
+            return info;
         }
 
         var epoch = _libraryEpoch;
+        var ordered = memoryIds.Distinct().ToList();
         var collection = await library.Catalog.CreateCollectionAsync(name, CollectionKind.Recap, ct);
-        await library.Catalog.AddToCollectionAsync(collection.Id, memoryIds, ct);
+        await library.Catalog.AddToCollectionAsync(collection.Id, ordered, ct);
+        await library.Catalog.ReorderCollectionAsync(collection.Id, ordered, ct);
         if (!IsCurrent(library, epoch))
         {
-            return;
+            return null;
         }
 
         await RefreshCollectionsAsync(library, epoch, ct);
+        return Recaps.FirstOrDefault(r => r.Id == collection.Id);
+    }
+
+    /// <summary>
+    /// Met à jour un récapitulatif existant : nom, contenu et ordre, sans recréer la collection.
+    /// </summary>
+    public async Task<CollectionInfo?> UpdateRecapAsync(
+        long recapId,
+        string name,
+        IReadOnlyList<long> memoryIds,
+        CancellationToken ct = default)
+    {
+        var library = Library;
+        if (library is null)
+        {
+            var index = -1;
+            for (var i = 0; i < Recaps.Count; i++)
+            {
+                if (Recaps[i].Id == recapId)
+                {
+                    index = i;
+                    break;
+                }
+            }
+            if (index < 0)
+            {
+                return null;
+            }
+
+            var existing = Recaps[index];
+            var info = BuildDemoRecap(recapId, name, memoryIds) with { CreatedAt = existing.CreatedAt };
+            _demoRecapItems[recapId] = memoryIds.Distinct().ToList();
+            Recaps[index] = info;
+            return info;
+        }
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.RenameCollectionAsync(recapId, name, ct);
+        var existingItems = await library.Catalog.GetCollectionItemsAsync(recapId, ct);
+        var ordered = memoryIds.Distinct().ToList();
+        var keep = ordered.ToHashSet();
+        var removals = existingItems.Where(c => !keep.Contains(c.Id)).Select(c => c.Id).ToList();
+        if (removals.Count > 0)
+        {
+            await library.Catalog.RemoveFromCollectionAsync(recapId, removals, ct);
+        }
+        await library.Catalog.AddToCollectionAsync(recapId, ordered, ct);
+        await library.Catalog.ReorderCollectionAsync(recapId, ordered, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return null;
+        }
+
+        await RefreshCollectionsAsync(library, epoch, ct);
+        return Recaps.FirstOrDefault(r => r.Id == recapId);
+    }
+
+    private long NextDemoRecapId()
+    {
+        // Les albums de démonstration occupent les petits identifiants ; les
+        // récapitulatifs utilisent une plage distincte pour éviter toute collision.
+        var maxRecap = Recaps.Count == 0 ? 0 : Recaps.Max(r => r.Id);
+        return Math.Max(1000, maxRecap + 1);
+    }
+
+    private CollectionInfo BuildDemoRecap(long id, string name, IReadOnlyList<long> memoryIds)
+    {
+        var cards = memoryIds
+            .Distinct()
+            .Select(memoryId => Cards.FirstOrDefault(c => c.Id == memoryId))
+            .OfType<MemoryCard>()
+            .ToList();
+        var dates = cards.Where(c => c.LocalDate is not null).Select(c => c.LocalDate!.Value).ToList();
+        return new CollectionInfo(
+            id,
+            name,
+            CollectionKind.Recap,
+            DateTimeOffset.Now,
+            cards.Count,
+            cards.Count > 0 ? ThumbnailFor(cards[0].Id) : null,
+            dates.Count > 0 ? dates.Min() : null,
+            dates.Count > 0 ? dates.Max() : null);
+
     }
 
     public async Task SaveSettingsAsync(AppSettings settings, CancellationToken ct = default)
