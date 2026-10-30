@@ -5,12 +5,6 @@ Inno Setup produit par `scripts/build-installer.ps1`. Il ne remplace pas les
 notes de version : voir [`RELEASE.md`](../RELEASE.md) et
 [`docs/release.md`](release.md).
 
-> **État de la version 0.1.0.** L'installateur et l'application de démonstration
-> sont construits, mais l'import réel et la création de bibliothèque ne sont pas
-> encore reliés à l'interface. Les sections « Import » et « Emplacement des
-> données » distinguent ce qui existe de ce qui est prévu. Ne présentez pas
-> cette version comme une version d'import finalisée.
-
 ## Prérequis
 
 | Élément | Exigence |

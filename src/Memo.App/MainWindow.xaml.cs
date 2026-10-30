@@ -148,6 +148,7 @@ public sealed partial class MainWindow : Window
         {
             return;
         }
+        Shell.IsEnabled = false;
         Story.Visibility = Visibility.Visible;
         Story.Closed -= OnStoryClosed;
         Story.Closed += OnStoryClosed;
@@ -157,9 +158,12 @@ public sealed partial class MainWindow : Window
     private void OnStoryClosed(object? sender, EventArgs e)
     {
         Story.Visibility = Visibility.Collapsed;
+        Shell.IsEnabled = true;
+        Shell.Focus(FocusState.Programmatic);
         Story.Closed -= OnStoryClosed;
     }
 }
+
 
 
 

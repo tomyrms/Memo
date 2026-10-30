@@ -21,6 +21,18 @@ public sealed partial class LibraryPage : Page
         InitializeComponent();
         Loaded += (_, _) => { _ready = true; BuildYears(); Refresh(); };
         Grid.SelectionChanged += (_, _) => UpdateSelectionBar();
+
+        var find = new KeyboardAccelerator
+        {
+            Key = Windows.System.VirtualKey.F,
+            Modifiers = Windows.System.VirtualKeyModifiers.Control
+        };
+        find.Invoked += (_, args) =>
+        {
+            SearchBox.Focus(FocusState.Programmatic);
+            args.Handled = true;
+        };
+        KeyboardAccelerators.Add(find);
     }
 
     private void BuildYears()
@@ -435,6 +447,7 @@ public sealed partial class LibraryPage : Page
         public string Key { get; }
     }
 }
+
 
 
 

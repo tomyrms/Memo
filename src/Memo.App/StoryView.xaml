@@ -22,10 +22,10 @@
             x:Name="StageHost"
             Grid.Row="1"
             Margin="24,16,24,16">
-            <controls:MediaStage x:Name="Stage" />
+            <controls:MediaStage x:Name="Stage" AutomationProperties.Name="Zone de lecture du souvenir" />
 
             <Button
-                x:Name="BigPlay"
+                x:Name="BigPlay" AutomationProperties.Name="Reprendre la lecture"
                 Width="64"
                 Height="64"
                 HorizontalAlignment="Center"
@@ -41,13 +41,18 @@
                     Glyph="&#xE768;" />
             </Button>
 
-            <TextBlock
-                x:Name="Counter"
+            <Border
                 Margin="0,8,10,0"
+                Padding="6,2"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Top"
-                FontSize="12"
-                Foreground="#B0A79A" />
+                Background="#B3000000"
+                CornerRadius="3">
+                <TextBlock
+                    x:Name="Counter"
+                    FontSize="12"
+                    Foreground="White" />
+            </Border>
 
             <Border
                 x:Name="ExportPanel"
@@ -101,7 +106,7 @@
                 Orientation="Horizontal"
                 Spacing="4">
                 <Button
-                    x:Name="ExportButton"
+                    x:Name="ExportButton" AutomationProperties.Name="Exporter la Story en vidéo"
                     Width="40"
                     Height="40"
                     Background="Transparent"
@@ -115,7 +120,7 @@
                         Glyph="&#xE74E;" />
                 </Button>
                 <Button
-                    x:Name="OverlayButton"
+                    x:Name="OverlayButton" AutomationProperties.Name="Afficher ou masquer le calque"
                     Width="40"
                     Height="40"
                     Background="Transparent"
@@ -129,7 +134,7 @@
                         Glyph="&#xE790;" />
                 </Button>
                 <Button
-                    x:Name="MuteButton"
+                    x:Name="MuteButton" AutomationProperties.Name="Couper ou rétablir le son"
                     Width="40"
                     Height="40"
                     Background="Transparent"
@@ -147,7 +152,7 @@
                     Height="40"
                     Background="Transparent"
                     BorderThickness="0"
-                    Click="OnPrevious"
+                    Click="OnPrevious" AutomationProperties.Name="Souvenir précédent"
                     CornerRadius="20"
                     ToolTipService.ToolTip="Précédent (flèche gauche)">
                     <FontIcon
@@ -156,7 +161,7 @@
                         Glyph="&#xE892;" />
                 </Button>
                 <Button
-                    x:Name="PlayButton"
+                    x:Name="PlayButton" AutomationProperties.Name="Mettre en pause ou reprendre"
                     Width="40"
                     Height="40"
                     Background="Transparent"
@@ -175,7 +180,7 @@
                     Height="40"
                     Background="Transparent"
                     BorderThickness="0"
-                    Click="OnNext"
+                    Click="OnNext" AutomationProperties.Name="Souvenir suivant"
                     CornerRadius="20"
                     ToolTipService.ToolTip="Suivant (flèche droite)">
                     <FontIcon
@@ -188,7 +193,7 @@
                     Height="40"
                     Background="Transparent"
                     BorderThickness="0"
-                    Click="OnClose"
+                    Click="OnClose" AutomationProperties.Name="Fermer la lecture"
                     CornerRadius="20"
                     ToolTipService.ToolTip="Fermer (Échap)">
                     <FontIcon
@@ -200,3 +205,6 @@
         </Grid>
     </Grid>
 </UserControl>
+
+
+

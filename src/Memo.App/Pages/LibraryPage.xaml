@@ -40,49 +40,48 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="1" ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <Grid Grid.Row="1" RowSpacing="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <AutoSuggestBox
                 x:Name="SearchBox"
-                Width="300"
+                Grid.Row="0"
+                Width="360"
                 HorizontalAlignment="Left"
                 PlaceholderText="Rechercher un lieu, une date, un texte OCR"
                 QueryIcon="Find"
                 TextChanged="OnSearchChanged" />
-            <ComboBox
-                x:Name="TypeFilter"
-                Grid.Column="1"
-                MinWidth="118"
-                SelectionChanged="OnFilterChanged"
-                Style="{StaticResource MemoComboBoxStyle}">
-                <ComboBoxItem Content="Tout" Tag="all" IsSelected="True" />
-                <ComboBoxItem Content="Photos" Tag="photo" />
-                <ComboBoxItem Content="Vidéos" Tag="video" />
-            </ComboBox>
-            <ComboBox
-                x:Name="YearFilter"
-                Grid.Column="2"
-                MinWidth="132"
-                SelectionChanged="OnFilterChanged"
-                Style="{StaticResource MemoComboBoxStyle}" />
-            <ToggleButton
-                x:Name="UndatedToggle"
-                Grid.Column="3"
-                Padding="12,6"
-                Click="OnFilterChanged"
-                Content="Date inconnue" />
-            <ToggleButton
-                x:Name="MissingToggle"
-                Grid.Column="4"
-                Padding="12,6"
-                Click="OnFilterChanged"
-                Content="À compléter" />
+            <StackPanel
+                Grid.Row="1"
+                Orientation="Horizontal"
+                Spacing="8">
+                <ComboBox
+                    x:Name="TypeFilter"
+                    MinWidth="118"
+                    SelectionChanged="OnFilterChanged"
+                    Style="{StaticResource MemoComboBoxStyle}">
+                    <ComboBoxItem Content="Tout" Tag="all" IsSelected="True" />
+                    <ComboBoxItem Content="Photos" Tag="photo" />
+                    <ComboBoxItem Content="Vidéos" Tag="video" />
+                </ComboBox>
+                <ComboBox
+                    x:Name="YearFilter"
+                    MinWidth="132"
+                    SelectionChanged="OnFilterChanged"
+                    Style="{StaticResource MemoComboBoxStyle}" />
+                <ToggleButton
+                    x:Name="UndatedToggle"
+                    Padding="12,6"
+                    Click="OnFilterChanged"
+                    Content="Date inconnue" />
+                <ToggleButton
+                    x:Name="MissingToggle"
+                    Padding="12,6"
+                    Click="OnFilterChanged"
+                    Content="À compléter" />
+            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="2">
@@ -90,6 +89,7 @@
                 x:Name="Grid"
                 IsItemClickEnabled="True"
                 ItemClick="OnItemClick"
+                RightTapped="OnGridRightTapped"
                 SelectionMode="None"
                 ShowsScrollingPlaceholders="True">
                 <GridView.GroupStyle>
@@ -171,5 +171,6 @@
         </Border>
     </Grid>
 </Page>
+
 
 

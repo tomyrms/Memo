@@ -54,7 +54,7 @@ public sealed partial class StoryView : UserControl
             var segment = new Grid { Height = 3, Margin = new Thickness(0, 0, 4, 0) };
             segment.Children.Add(new Border
             {
-                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(80, 255, 255, 255)),
+                Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Windows.UI.Color.FromArgb(120, 255, 255, 255)),
                 CornerRadius = new CornerRadius(2)
             });
             var fill = new Border
@@ -429,4 +429,5 @@ public sealed partial class StoryView : UserControl
         }
     }
 }
+
 

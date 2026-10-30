@@ -75,12 +75,12 @@
                         x:Name="DemoBadge"
                         Padding="8,3"
                         HorizontalAlignment="Left"
-                        Background="{ThemeResource MemoAccentSoftBrush}"
+                        Background="{ThemeResource MemoAccentBrush}"
                         CornerRadius="4">
                         <TextBlock
                             FontSize="11"
                             FontWeight="SemiBold"
-                            Foreground="{ThemeResource MemoAccentBrush}"
+                            Foreground="{ThemeResource MemoAccentTextBrush}"
                             Text="Démonstration" />
                     </Border>
                     <TextBlock
@@ -123,5 +123,6 @@
         </NavigationView>
     </Grid>
 </UserControl>
+
 
 

@@ -1,98 +1,60 @@
 # Memo 0.1.0
 
-Date : 30 octobre 2026
+Première version publique de Memo, application Windows locale pour importer, conserver et redécouvrir des Souvenirs Snapchat.
 
-Statut : **pré-version technique, non signée**. Ce document est un modèle de
-notes de version ; il ne déclare pas terminées les fonctions qui n'ont pas été
-validées sur une installation Windows propre.
+## Points forts
 
-## Fonctionnalités
-
-- **Socle Windows** : application WinUI 3 non empaquetée, auto-contenue, cible
-  Windows 10 21H2 / Windows 11 x64.
-- **Moteur de bibliothèque** (`Memo.Core`) : catalogue SQLite, import de
-  plusieurs archives, rapprochement des médias et calques, dates avec
-  provenance et fuseau, découverte, sauvegarde et réglages. Ces briques sont
-  couvertes par les tests du projet `Memo.Core`.
-- **Moteur média** (`Memo.Media`) : détection des formats par signature
-  (JPEG, PNG, WebP, MP4), orientation EXIF, composition d'images, miniatures
-  WebP et extraction d'images vidéo via LibVLC. Ces briques sont couvertes par
-  les tests du projet `Memo.Media`.
-- **Interface de démonstration** : navigation, galerie, lecture Story, « Ce
-  jour-là », albums, récapitulatifs, recherche, carte, écran Imports et
-  Réglages, alimentés par un corpus synthétique explicite.
-- **Installateur Windows** : Inno Setup 6, installation par utilisateur dans
-  `%LOCALAPPDATA%\Programs\Memo`, raccourci menu Démarrer, raccourci bureau
-  facultatif, désinstallation propre.
-- **Licences tierces** : `LICENSES/` et `THIRD-PARTY-NOTICES.txt` installés
-  avec l'application ; DLL LibVLC séparées et remplaçables.
-
-## Corrections
-
-Aucune correction issue d'une version publiée précédemment : 0.1.0 est la
-première version préparée. Les éléments non terminés sont décrits dans les
-limites connues plutôt que présentés comme corrigés.
-
-## Limites connues
-
-- **Import non accessible depuis l'interface** : l'écran Imports permet de
-  sélectionner des archives, mais l'écriture dans une bibliothèque n'est pas
-  encore reliée. L'application démarre en mode démonstration avec des médias
-  synthétiques.
-- **Création et ouverture de bibliothèque non reliées** : les boutons de
-  l'écran Réglages affichent encore « non disponible ».
-- **Installateur non signé** : SmartScreen peut afficher un avertissement.
-  Aucune signature Authenticode n'est fournie.
-- **Validation sur machine propre non réalisée** : un test local silencieux a
-  vérifié l'installation, les DLL LibVLC, les licences et la désinstallation,
-  mais l'installation sans SDK, la lecture HEVC sans extension Microsoft, le
-  décodage WebP et la composition de calques restent à vérifier sur une VM
-  Windows neuve.
-- **ARM64 non pris en charge** : seule l'architecture x64 est publiée.
-- **Licence du code Memo non définie** : « licence à définir avant diffusion ».
-  Ne pas publier cette version comme produit distribué avant décision.
-- **Pas de mise à jour automatique** : chaque version est téléchargée et
-  installée manuellement.
-- **Taille** : la publication complète pèse environ 770 Mo, l'installation
-  environ 349 Mo et l'installateur environ 95 Mo (mesures du 30 octobre 2026).
-  Prévoir un téléchargement et une installation longs.
-- **VC++ Redistributable non embarqué** : les DLL LibVLC en dépendent sur une
-  installation Windows nue.
-- **Version du binaire** : `Memo.exe` reste en `FileVersion 1.0.0.0` tant que
-  le projet ne fixe pas `Version`; l'installateur et ces notes portent 0.1.0.
-- **Journal de plantage** : `memo-crash.log` est écrit dans le dossier
-  d'installation, supprimé avec celui-ci.
+- **Import multi-ZIP** avec reprise, réimport sans doublon, espaces sources séparés et diagnostics par élément.
+- **Bibliothèque réelle** : catalogue SQLite, photos et vidéos, dates avec provenance, correction manuelle, fuseau de classement.
+- **Galerie chronologique** par mois, filtres, vue « Date inconnue », éléments à compléter.
+- **Lecteur Story** photo/vidéo avec calques alignés, progression, clavier, son, lecture avec ou sans calque. Vidéo HEVC lue via LibVLC, sans dépendre de l'extension Microsoft.
+- **« Ce jour-là »**, « Une journée à redécouvrir », « Surprends-moi ».
+- **Albums, favoris, exclusions** persistés, conservés après réimport.
+- **Récapitulatifs** annuels, mensuels et saisonniers, modifiables et enregistrables.
+- **Recherche** texte (dont OCR local), visuelle par empreinte, groupes de visages indicatifs.
+- **Carte hors ligne** des souvenirs disposant d'un lieu explicite.
+- **Sauvegarde/restauration portable** et export d'une sélection.
+- **Export MP4** d'une Story via Media Foundation.
+- **Rappels Windows** facultatifs et discrets, via une tâche planifiée visible.
 
 ## Installation
 
-Prérequis : Windows 10 21H2 (build 19044) ou Windows 11, x64 ; prévoir 1 Go
-libre. Aucun droit administrateur n'est nécessaire.
+Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 
-1. Télécharger `Memo-0.1.0-win-x64-setup.exe` depuis la publication officielle.
-2. Vérifier l'empreinte SHA-256 :
+1. Lancer `Memo-0.1.0-win-x64-setup.exe`.
+2. Vérifier le SHA-256 publié.
+3. Accepter l'avertissement SmartScreen si nécessaire.
+4. Créer une bibliothèque dans **Réglages → Bibliothèque**, puis importer les ZIP dans **Imports**.
 
-   ```powershell
-   Get-FileHash .\Memo-0.1.0-win-x64-setup.exe -Algorithm SHA256
-   ```
+## Corrections et robustesse
 
-   Empreinte de cette version :
+- Les sources importées ne sont jamais réécrites ; miniatures et compositions sont des dérivés.
+- WebP sous extension `.png` reconnu par signature.
+- Rotation appliquée une seule fois ; alignement des calques dans le repère affiché.
+- Archives corrompues, entrées `../`, conflits de rôle et médias manquants produisent un diagnostic sans bloquer l'application.
+- 39 tests Core + 69 tests Media au moment de la release.
 
-   ```text
-   SHA-256 : F9B0F88526F1A72E799935B640FDC84D0797FD7ACBCC8B1E1E5376A1311618CF
-   ```
+## Limites connues
 
-   Taille de l'installateur : 99 884 040 octets (95,3 Mio).
+- **Installateur non signé** : SmartScreen affiche un avertissement ; aucun certificat n'est simulé.
+- **Validation sur machine Windows propre non réalisée** : lecture HEVC sans extension Microsoft, WebP, installation sans SDK/VC++ restent à confirmer sur VM neuve.
+- **Index Snapchat avec liens distants** : non pris en charge, aucun schéma réel validé.
+- **OCR** : dépend d'un pack de langue Windows ; l'absence est signalée.
+- **Visages** : groupes indicatifs (empreinte 64 bits), pas des identités certaines ; renommage/fusion dans l'interface non terminés.
+- **Récapitulatifs** : réordonnancement manuel et prévisualisation avant enregistrement non terminés.
+- **Export** : H.264 via Media Foundation ; Windows N nécessite le Media Feature Pack ; pas de prévisualisation avant génération.
+- **Rappels** : la tâche ne s'exécute que si Windows est allumé et l'utilisateur connecté ; l'affichage du toast dépend des réglages Windows.
+- **ARM64** non pris en charge.
+- **Licence du code Memo** : à définir avant diffusion sous licence.
 
-3. Lancer l'installateur. Il n'est pas signé : SmartScreen peut demander
-   **Informations complémentaires > Exécuter quand même**.
-4. Laisser le dossier proposé `%LOCALAPPDATA%\Programs\Memo` ou en choisir un
-   autre dans le profil utilisateur.
-5. Lancer Memo. La version 0.1.0 ouvre la bibliothèque de démonstration ; elle
-   ne crée ni n'importe de bibliothèque personnelle.
+## Vérifications effectuées
 
-La désinstallation passe par **Paramètres Windows > Applications >
-Applications installées > Memo**. Les bibliothèques et sauvegardes créées hors
-du dossier d'installation ne sont pas supprimées.
+- Build Release, tests Core/Media, import UI de 6 ZIP (22 souvenirs), sauvegarde/restauration de 23 souvenirs, analyse locale (13 OCR, 13 empreintes), lecture HEVC et photo avec calque, export MP4 auto-vérifié, installateur compilé et testé en installation/désinstallation silencieuse.
+- Captures d'écran des écrans principaux en 1320×860 et 1040×1800.
 
-Documentation complète : [`docs/install.md`](docs/install.md). Procédure de
-publication : [`docs/release.md`](docs/release.md).
+## Artefacts
+
+- `Memo-0.1.0-win-x64-setup.exe` (non signé)
+- `Memo-0.1.0-win-x64-setup.exe.sha256`
+
+Les détails de procédure sont dans `docs/release.md` et `docs/install.md`.
