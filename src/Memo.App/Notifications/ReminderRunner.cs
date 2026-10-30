@@ -63,6 +63,12 @@ public sealed class ReminderRunOptions
 
     /// <summary>Autorise une seconde notification le même jour. À réserver aux essais.</summary>
     public bool IgnoreAlreadyNotified { get; init; }
+
+    /// <summary>
+    /// Écrit la proposition et le jour notifié. Désactivé par le bouton de
+    /// test : un essai ne doit pas consommer le rappel du jour.
+    /// </summary>
+    public bool PersistState { get; init; } = true;
 }
 
 /// <summary>
@@ -127,9 +133,14 @@ public static class ReminderRunner
     /// <see cref="ToastService.Register"/> avant de lire une éventuelle
     /// activation de notification.
     /// </summary>
+    /// <param name="raiseActivationEvent">
+    /// Quand l'appelant traite lui-même <see cref="ReminderStartupResult.Activation"/>,
+    /// passer false évite d'ouvrir la Story deux fois.
+    /// </param>
     public static async Task<ReminderStartupResult> TryHandleStartupAsync(
         string[]? args = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool raiseActivationEvent = true)
     {
         args ??= Environment.GetCommandLineArgs();
 
@@ -143,7 +154,13 @@ public static class ReminderRunner
         var activation = TryGetNotificationActivation();
         if (activation is not null)
         {
-            ToastService.Current.RaiseActivated(activation);
+            if (raiseActivationEvent)
+            {
+                ToastService.Current.RaiseActivated(activation);
+            }
+
+            // L'activation est consommée dans tous les cas : elle est déjà
+            // retournée à l'appelant.
             ToastService.Current.TryTakePendingActivation();
             return ReminderStartupResult.ForActivation(activation);
         }
@@ -267,10 +284,13 @@ public static class ReminderRunner
                     NotificationShown: false);
             }
 
-            await library.Catalog.RecordSuggestionAsync(
-                    items.Select(card => card.Id).ToList(),
-                    token)
-                .ConfigureAwait(false);
+            if (options.PersistState)
+            {
+                await library.Catalog.RecordSuggestionAsync(
+                        items.Select(card => card.Id).ToList(),
+                        token)
+                    .ConfigureAwait(false);
+            }
 
             string? thumbnail = null;
             if (!settings.DiscreetNotifications)
@@ -304,7 +324,10 @@ public static class ReminderRunner
                     NotificationShown: false);
             }
 
-            state.MarkNotified(library.Info.Id, day, DateTimeOffset.UtcNow);
+            if (options.PersistState)
+            {
+                state.MarkNotified(library.Info.Id, day, DateTimeOffset.UtcNow);
+            }
 
             return new ReminderRunResult(
                 ExitSuccess,

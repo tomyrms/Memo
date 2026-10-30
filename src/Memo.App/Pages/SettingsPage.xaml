@@ -123,6 +123,20 @@
                         <TimePicker x:Name="ReminderTime" Grid.Column="1" ClockIdentifier="24HourClock" SelectedTimeChanged="OnReminderTimeChanged" />
                     </Grid>
                     <ToggleSwitch x:Name="DiscreetSwitch" Header="Notification discrète (sans miniature ni nom)" Toggled="OnDiscreetChanged" />
+                    <Border
+                        Background="{ThemeResource MemoPhotoPlaceholderBrush}"
+                        CornerRadius="4"
+                        Padding="12">
+                        <StackPanel Spacing="4">
+                            <TextBlock
+                                x:Name="ReminderTaskState"
+                                Style="{StaticResource MemoBodyTextStyle}"
+                                Text="Vérification de la tâche planifiée…"
+                                TextWrapping="Wrap" />
+                            <TextBlock x:Name="ReminderNextRun" Style="{StaticResource MemoCaptionTextStyle}" TextWrapping="Wrap" />
+                            <TextBlock x:Name="ReminderLastRun" Style="{StaticResource MemoCaptionTextStyle}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Button
                             x:Name="TestReminderButton"
@@ -136,7 +150,7 @@
                     </StackPanel>
                     <TextBlock
                         Style="{StaticResource MemoCaptionTextStyle}"
-                        Text="Aucun rappel n'est activé par défaut. Quand la fenêtre est fermée, une tâche Windows planifiée peut ouvrir Memo pour afficher la notification ; ce comportement sera indiqué à l'activation." />
+                        Text="Aucun rappel n'est activé par défaut. Quand la fenêtre est fermée, Windows lance brièvement Memo à l'heure choisie pour afficher la notification, puis le processus se termine : aucune fenêtre ne s'ouvre et Memo ne démarre pas avec Windows. Un clic sur la notification ouvre « Ce jour-là » ; si Memo est déjà ouvert, sa fenêtre est ramenée au premier plan. Le test n'envoie qu'une notification immédiate et ne consomme pas le rappel du jour." />
                 </StackPanel>
             </Border>
 

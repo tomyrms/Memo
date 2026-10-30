@@ -1,3 +1,4 @@
+using Memo.App.Services;
 using Memo.Core;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -8,13 +9,14 @@ namespace Memo.App;
 
 public sealed partial class MainWindow : Window
 {
-    public static MainWindow? Current { get; private set; }
+    private DateOnly? _pendingDay;
+    private bool _shellReady;
 
     public MainWindow()
     {
         InitializeComponent();
-        Current = this;
         Title = "Memo";
+        Shell.Ready += OnShellReady;
         AppWindow.Resize(new SizeInt32(1320, 860));
 
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
@@ -82,24 +84,70 @@ public sealed partial class MainWindow : Window
                 ShowStory(items, 0);
             };
         }
-
-        Closed += (_, _) => Current = null;
     }
 
     public void Navigate(string tag) => Shell.Navigate(tag);
 
+    /// <summary>
+    /// Ouvre « Ce jour-là » pour le jour concerné : même jour et même mois dans
+    /// les années antérieures, hors souvenirs masqués et hors calques seuls.
+    /// L'appel peut précéder le chargement de la bibliothèque (activation par
+    /// notification) ; la sélection est alors rejouée quand la coquille est prête.
+    /// </summary>
     public void ShowDay(DateOnly day)
     {
-        var items = Services.AppState.Current.Cards
-            .Where(c => c.LocalDate == day)
-            .OrderBy(c => c.ExternalKey)
+        if (!_shellReady)
+        {
+            _pendingDay = day;
+            return;
+        }
+
+        // Le jour de la charge utile peut dater (notification conservée dans
+        // le Centre de notifications). L'anniversaire se calcule par rapport à
+        // l'année courante de la bibliothèque, pas à l'année de la charge utile.
+        var items = AppState.Current.ThisDay(AnniversaryReference(day))
+            .Where(c => c.Status != MemoryStatus.OverlayOnly)
+            .OrderBy(c => c.LocalDate)
+            .ThenBy(c => c.ExternalKey, StringComparer.Ordinal)
             .ToList();
         if (items.Count == 0)
         {
+            Shell.Select("home");
             Navigate("home");
             return;
         }
+
         ShowStory(items, 0);
+    }
+
+    private static DateOnly AnniversaryReference(DateOnly requested)
+    {
+        // Le 29 février n'existe pas toutes les années : on cherche la
+        // prochaine année bissextile pour inclure tous les anniversaires passés.
+        var year = AppState.Current.Today.Year;
+        while (true)
+        {
+            try
+            {
+                return new DateOnly(year, requested.Month, requested.Day);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                year++;
+            }
+        }
+    }
+
+    private void OnShellReady(object? sender, EventArgs e)
+    {
+        _shellReady = true;
+        if (_pendingDay is not DateOnly day)
+        {
+            return;
+        }
+
+        _pendingDay = null;
+        ShowDay(day);
     }
 
     public void ApplyTheme(string theme)
