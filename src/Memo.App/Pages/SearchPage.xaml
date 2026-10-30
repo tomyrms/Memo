@@ -34,7 +34,7 @@
                     x:Name="Query"
                     Width="360"
                     HorizontalAlignment="Left"
-                    PlaceholderText="Lieu, date, texte reconnu…"
+                    PlaceholderText="Lieu, date, texte reconnu, identifiant…"
                     QueryIcon="Find"
                     TextChanged="OnQueryChanged" />
                 <TextBlock

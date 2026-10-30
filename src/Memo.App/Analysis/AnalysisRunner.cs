@@ -34,13 +34,20 @@ public sealed record AnalysisRunOptions
     /// <summary>Détection et regroupement des visages. Plus coûteux, désactivé par défaut.</summary>
     public bool Faces { get; init; }
 
-    /// <summary>Ignore les souvenirs qui ont déjà un texte OCR ou une empreinte visuelle.</summary>
-    public bool SkipExisting { get; init; }
+    /// <summary>
+    /// Ignore les souvenirs qui ont déjà un texte OCR ou une empreinte visuelle. Activé par
+    /// défaut : une passe conserve donc les résultats existants, et le recalcul complet doit être
+    /// demandé explicitement (bouton « Tout réanalyser » dans Réglages).
+    /// </summary>
+    public bool SkipExisting { get; init; } = true;
 
     /// <summary>Taille des pages lues dans le catalogue (bornée entre 50 et 5 000).</summary>
     public int PageSize { get; init; } = 500;
 
-    /// <summary>Active toutes les analyses, y compris les visages.</summary>
+    /// <summary>
+    /// Active toutes les analyses, y compris les visages. La passe reste incrémentale :
+    /// <see cref="SkipExisting"/> conserve sa valeur par défaut.
+    /// </summary>
     public static AnalysisRunOptions All => new() { Ocr = true, VisualHash = true, Faces = true };
 
     /// <summary>N'active rien : utile pour construire une variante avec <c>with</c>.</summary>

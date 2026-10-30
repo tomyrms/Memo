@@ -706,20 +706,37 @@ public sealed partial class SettingsPage : Page
 
     private CancellationTokenSource? _analysisCts;
 
-    private async void OnAnalyze(object sender, RoutedEventArgs e)
+    private async void OnAnalyze(object sender, RoutedEventArgs e) => await RunAnalysisAsync(fullRescan: false);
+
+    private async void OnReanalyzeAll(object sender, RoutedEventArgs e) => await RunAnalysisAsync(fullRescan: true);
+
+    /// <summary>
+    /// Lance une passe d'analyse. Le mode incrémental est le comportement par défaut : seuls les
+    /// souvenirs sans texte reconnu ni empreinte visuelle sont recalculés. Le rescan complet
+    /// n'est proposé que par « Tout réanalyser », après une confirmation explicite.
+    /// </summary>
+    private async Task RunAnalysisAsync(bool fullRescan)
     {
         if (AppState.Current.Library is null)
         {
             Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de lancer l'analyse.", InfoBarSeverity.Warning);
             return;
         }
+        if (_analysisCts is not null)
+        {
+            // Une passe est déjà en cours : un double clic très rapide ne doit pas en lancer deux.
+            return;
+        }
+        if (fullRescan && !await ConfirmFullRescanAsync())
+        {
+            return;
+        }
 
         _analysisCts = new CancellationTokenSource();
-        AnalyzeButton.IsEnabled = false;
-        CancelAnalysisButton.Visibility = Visibility.Visible;
+        SetAnalysisButtonsEnabled(false);
         AnalysisProgress.Visibility = Visibility.Visible;
         AnalysisProgress.Value = 0;
-        AnalysisStatus.Text = "Préparation…";
+        AnalysisStatus.Text = fullRescan ? "Rescan complet en préparation…" : "Préparation…";
         SetAnalysisDeletionEnabled(false);
 
         try
@@ -730,7 +747,8 @@ public sealed partial class SettingsPage : Page
                 Ocr = OcrSwitch.IsOn,
                 VisualHash = true,
                 Faces = FacesSwitch.IsOn,
-                SkipExisting = false
+                // Le mode incrémental saute ce qui existe déjà ; le rescan complet le force.
+                SkipExisting = !fullRescan
             };
             var progress = new Progress<AnalysisProgress>(p =>
             {
@@ -739,10 +757,29 @@ public sealed partial class SettingsPage : Page
                 AnalysisStatus.Text = $"{p.Message} ({p.Done}/{p.Total})";
             });
             var summary = await runner.RunAsync(options, progress, _analysisCts.Token);
-            AnalysisStatus.Text = $"{summary.OcrCompleted} OCR · {summary.VisualHashesCompleted} empreintes · {summary.FacesDetected} visages · {summary.FaceGroupsCreated} groupes";
-            Show("Analyse terminée",
-                summary.Error ?? $"Traitement local terminé en {summary.Duration.TotalSeconds:0} s. Les résultats sont corrigeables et supprimables.",
-                InfoBarSeverity.Success);
+            if (summary.Cancelled)
+            {
+                AnalysisStatus.Text = "Analyse annulée.";
+                Show(
+                    "Analyse annulée",
+                    "Les résultats déjà enregistrés sont conservés ; une nouvelle passe reprendra les souvenirs non traités.",
+                    InfoBarSeverity.Informational);
+            }
+            else
+            {
+                AnalysisStatus.Text =
+                    $"{summary.OcrCompleted} OCR · {summary.VisualHashesCompleted} empreintes · " +
+                    $"{summary.FacesDetected} visages · {summary.FaceGroupsCreated} groupes" +
+                    (fullRescan
+                        ? " · rescan complet"
+                        : $" · {summary.OcrSkipped + summary.VisualHashesSkipped} déjà à jour");
+                Show(
+                    fullRescan ? "Rescan complet terminé" : "Analyse terminée",
+                    summary.Error ?? (fullRescan
+                        ? $"Traitement local terminé en {summary.Duration.TotalSeconds:0} s. Tous les textes et empreintes ont été recalculés."
+                        : $"Traitement local terminé en {summary.Duration.TotalSeconds:0} s. {summary.OcrSkipped} texte(s) et {summary.VisualHashesSkipped} empreinte(s) déjà présents ont été conservés."),
+                    summary.Error is null ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -757,11 +794,43 @@ public sealed partial class SettingsPage : Page
         {
             _analysisCts.Dispose();
             _analysisCts = null;
-            AnalyzeButton.IsEnabled = true;
-            CancelAnalysisButton.Visibility = Visibility.Collapsed;
+            // Les textes reconnus ont pu changer : la recherche des autres pages doit relire
+            // le catalogue au lieu de réutiliser son cache.
+            MemorySearch.InvalidateOcrCache();
+            SetAnalysisButtonsEnabled(true);
             AnalysisProgress.Visibility = Visibility.Collapsed;
             await RefreshAnalysisDataAsync();
         }
+    }
+
+    /// <summary>
+    /// Confirmation du seul chemin qui recalcule tout. Le coût peut être élevé sur une grande
+    /// bibliothèque, et les textes déjà présents sont remplacés.
+    /// </summary>
+    private async Task<bool> ConfirmFullRescanAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "Tout réanalyser ?",
+            Content =
+                "Les textes reconnus et les empreintes visuelles seront recalculés pour toutes les photos, " +
+                "même celles déjà analysées. Sur une grande bibliothèque, cette opération peut prendre longtemps. " +
+                "Les souvenirs, les médias, les lieux et les dates corrigées ne sont pas modifiés. " +
+                "Une analyse des visages, si elle est activée, est également relancée ; les groupes nommés sont conservés.",
+            PrimaryButtonText = "Tout réanalyser",
+            CloseButtonText = "Annuler",
+            // L'action longue et coûteuse n'est jamais le bouton par défaut.
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    private void SetAnalysisButtonsEnabled(bool enabled)
+    {
+        AnalyzeButton.IsEnabled = enabled;
+        ReanalyzeAllButton.IsEnabled = enabled;
+        CancelAnalysisButton.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnCancelAnalysis(object sender, RoutedEventArgs e) => _analysisCts?.Cancel();
@@ -844,6 +913,8 @@ public sealed partial class SettingsPage : Page
         try
         {
             await library.Analysis.ClearOcrAsync();
+            // La recherche ne doit plus proposer de souvenirs dont le texte vient d'être effacé.
+            MemorySearch.InvalidateOcrCache();
             await RefreshAnalysisDataAsync();
             Show("Textes OCR supprimés",
                 "Aucun souvenir n'a été supprimé. Relancez l'analyse pour recalculer les textes reconnus.",

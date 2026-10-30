@@ -166,6 +166,11 @@
                             Content="Analyser maintenant"
                             Style="{StaticResource MemoSecondaryButtonStyle}" />
                         <Button
+                            x:Name="ReanalyzeAllButton"
+                            Click="OnReanalyzeAll"
+                            Content="Tout réanalyser"
+                            Style="{StaticResource MemoQuietButtonStyle}" />
+                        <Button
                             x:Name="CancelAnalysisButton"
                             Click="OnCancelAnalysis"
                             Content="Annuler"
@@ -174,12 +179,13 @@
                         <TextBlock
                             x:Name="AnalysisStatus"
                             VerticalAlignment="Center"
-                            Style="{StaticResource MemoCaptionTextStyle}" />
+                            Style="{StaticResource MemoCaptionTextStyle}"
+                            TextWrapping="Wrap" />
                     </StackPanel>
                     <ProgressBar x:Name="AnalysisProgress" Maximum="1" Visibility="Collapsed" />
                     <TextBlock
                         Style="{StaticResource MemoCaptionTextStyle}"
-                        Text="Ces traitements s'exécutent sur ce PC. Aucun média n'est envoyé à un service distant. Les résultats peuvent être supprimés sans effacer les souvenirs." />
+                        Text="L'analyse est incrémentale : les souvenirs qui ont déjà un texte reconnu ou une empreinte visuelle sont ignorés. « Tout réanalyser » recalcule tout après confirmation. Ces traitements s'exécutent sur ce PC : aucun média n'est envoyé à un service distant. Les résultats peuvent être supprimés sans effacer les souvenirs." />
                 </StackPanel>
             </Border>
 

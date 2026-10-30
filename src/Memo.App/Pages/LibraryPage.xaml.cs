@@ -26,7 +26,12 @@ public sealed partial class LibraryPage : Page
     public LibraryPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => { _ready = true; BuildYears(); Refresh(); };
+        Loaded += (_, _) =>
+        {
+            _ready = true;
+            BuildYears();
+            Refresh();
+        };
         Grid.SelectionChanged += (_, _) => UpdateSelectionBar();
 
         var find = new KeyboardAccelerator
@@ -71,7 +76,10 @@ public sealed partial class LibraryPage : Page
         YearFilter.SelectedItem is ComboBoxItem { Tag: int year } ? year : 0,
         SearchBox.Text?.Trim() ?? string.Empty);
 
-    private static List<MemoryCard> ApplyFilter(IEnumerable<MemoryCard> cards, FilterCriteria criteria)
+    private static List<MemoryCard> ApplyFilter(
+        IEnumerable<MemoryCard> cards,
+        FilterCriteria criteria,
+        IReadOnlyDictionary<long, string>? ocrTexts)
     {
         IEnumerable<MemoryCard> query = cards;
 
@@ -97,11 +105,9 @@ public sealed partial class LibraryPage : Page
         }
         if (criteria.Search.Length > 0)
         {
-            var search = criteria.Search;
-            query = query.Where(c =>
-                (c.LocationLabel?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                c.ExternalKey.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                (c.LocalDate?.ToString("dddd d MMMM yyyy", AppState.French).Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
+            // Même règle que l'écran Recherche : lieu, date, texte OCR et identifiant,
+            // sans dépendre des accents ni de la casse.
+            query = query.Where(c => MemorySearch.Matches(c, criteria.Search, ocrTexts));
         }
 
         return query
@@ -120,7 +126,17 @@ public sealed partial class LibraryPage : Page
 
         // Un changement de filtre remplace immédiatement toute frappe encore en attente.
         CancelPendingSearch();
-        ApplyFiltered(ApplyFilter(AppState.Current.Cards, CaptureCriteria()));
+        _searchGeneration++;
+        var criteria = CaptureCriteria();
+        if (criteria.Search.Length == 0)
+        {
+            // Sans requête texte, les textes reconnus ne sont pas nécessaires : la vue se met à
+            // jour tout de suite, comme avant.
+            ApplyFiltered(ApplyFilter(AppState.Current.Cards, criteria, null));
+            return;
+        }
+
+        ScheduleFilter(criteria, debounce: false);
     }
 
     private void ApplyFiltered(IReadOnlyList<MemoryCard> filtered)
@@ -188,21 +204,21 @@ public sealed partial class LibraryPage : Page
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
         {
-            ScheduleSearch();
+            ScheduleFilter(CaptureCriteria(), debounce: true);
         }
     }
 
     /// <summary>
-    /// Attend une courte pause avant de filtrer. Chaque frappe annule la passe précédente, et le
-    /// numéro de génération empêche un résultat obsolète d'écraser un texte plus récent.
+    /// Prépare une passe de filtrage. Chaque appel annule la passe précédente, et le numéro de
+    /// génération empêche un résultat obsolète d'écraser un texte plus récent.
     /// </summary>
-    private void ScheduleSearch()
+    private void ScheduleFilter(FilterCriteria criteria, bool debounce)
     {
         CancelPendingSearch();
         var generation = ++_searchGeneration;
         var cts = new CancellationTokenSource();
         _searchCts = cts;
-        _ = DebouncedSearchAsync(generation, cts);
+        _ = RunFilterAsync(criteria, debounce, generation, cts);
     }
 
     private void CancelPendingSearch()
@@ -212,16 +228,27 @@ public sealed partial class LibraryPage : Page
         _searchCts = null;
     }
 
-    private async Task DebouncedSearchAsync(int generation, CancellationTokenSource cts)
+    private async Task RunFilterAsync(
+        FilterCriteria criteria,
+        bool debounce,
+        int generation,
+        CancellationTokenSource cts)
     {
         try
         {
-            await Task.Delay(SearchDelayMs, cts.Token);
+            if (debounce)
+            {
+                await Task.Delay(SearchDelayMs, cts.Token);
+            }
 
-            // Les contrôles sont lus sur le fil UI, puis le filtrage s'exécute en arrière-plan.
-            var criteria = CaptureCriteria();
+            // Les contrôles ont été lus sur le fil UI. Les textes reconnus sont chargés une seule
+            // fois par passe, puis le filtrage s'exécute en arrière-plan.
+            var ocrTexts = criteria.Search.Length > 0
+                ? await MemorySearch.LoadOcrTextsAsync(cts.Token)
+                : null;
             var snapshot = AppState.Current.Cards.ToList();
-            var filtered = await Task.Run(() => ApplyFilter(snapshot, criteria), cts.Token);
+            var filtered = await Task.Run(
+                () => ApplyFilter(snapshot, criteria, ocrTexts), cts.Token);
 
             cts.Token.ThrowIfCancellationRequested();
             if (generation != _searchGeneration)
@@ -232,7 +259,17 @@ public sealed partial class LibraryPage : Page
         }
         catch (OperationCanceledException)
         {
-            // Frappe remplacée : aucun résultat intermédiaire n'est affiché.
+            // Frappe ou filtre remplacé : aucun résultat intermédiaire n'est affiché.
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException && !cts.IsCancellationRequested)
+        {
+            // Les textes reconnus sont le seul accès susceptible d'échouer : la vue reste
+            // utilisable avec les autres champs, et l'état est annoncé sans bloquer la page.
+            if (generation == _searchGeneration)
+            {
+                ApplyFiltered(ApplyFilter(AppState.Current.Cards, criteria, null));
+                CountLabel.Text = "Recherche partielle : textes reconnus indisponibles.";
+            }
         }
         finally
         {

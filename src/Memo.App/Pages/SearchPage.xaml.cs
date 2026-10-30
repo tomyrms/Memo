@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Memo.App.Analysis;
 using Memo.App.Services;
 using Memo.App.Ui;
@@ -9,13 +11,6 @@ namespace Memo.App.Pages;
 
 public sealed partial class SearchPage : Page
 {
-    private static readonly Dictionary<long, string> DemoOcr = new()
-    {
-        [3] = "BON APREM 15:44",
-        [12] = "15:44",
-        [13] = "BON APREM",
-    };
-
     private List<MemoryCard> _results = new();
     private bool _ready;
     private CancellationTokenSource? _searchCts;
@@ -30,7 +25,9 @@ public sealed partial class SearchPage : Page
         Loaded += async (_, _) =>
         {
             _ready = true;
-            await RunAsync(string.Empty, ++_searchGeneration, CancellationToken.None);
+            // Le texte éventuellement conservé par la page mise en cache reste affiché :
+            // les résultats doivent lui correspondre, y compris après une analyse.
+            await RunAsync(Query.Text ?? string.Empty, ++_searchGeneration, CancellationToken.None);
         };
     }
 
@@ -119,24 +116,15 @@ public sealed partial class SearchPage : Page
     private async Task RunAsync(string query, int generation, CancellationToken ct)
     {
         var q = query.Trim();
-        List<MemoryCard> results;
-        if (AppState.Current.Library is not null)
-        {
-            results = (await AppState.Current.SearchAsync(q, ct)).ToList();
-        }
-        else
-        {
-            var cards = AppState.Current.Cards.AsEnumerable();
-            if (q.Length > 0)
-            {
-                cards = cards.Where(c =>
-                    (c.LocationLabel?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false) ||
-                    c.ExternalKey.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    (DemoOcr.TryGetValue(c.Id, out var ocr) && ocr.Contains(q, StringComparison.OrdinalIgnoreCase)) ||
-                    (c.LocalDate?.ToString("d MMMM yyyy", AppState.French).Contains(q, StringComparison.OrdinalIgnoreCase) ?? false));
-            }
-            results = cards.OrderByDescending(c => c.LocalDate).ToList();
-        }
+
+        // La Bibliothèque et l'écran Recherche appliquent la même règle : mêmes champs
+        // (lieu, date, texte OCR, identifiant), même traitement du vide, des accents et de la casse.
+        var results = await MemorySearch.FilterAsync(AppState.Current.Cards, q, ct);
+        results = results
+            .OrderByDescending(c => c.LocalDate is not null)
+            .ThenByDescending(c => c.LocalDate)
+            .ThenBy(c => c.ExternalKey, StringComparer.Ordinal)
+            .ToList();
 
         ct.ThrowIfCancellationRequested();
         if (generation != _searchGeneration)
@@ -150,8 +138,8 @@ public sealed partial class SearchPage : Page
         ResultCount.Text = _results.Count == 1 ? "1 souvenir" : $"{_results.Count} souvenirs";
         EmptyText.Visibility = _results.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyText.Text = q.Length == 0
-            ? "Saisissez un mot pour chercher dans les lieux, les dates et les textes reconnus."
-            : $"Aucun résultat pour « {q} ». Les textes reconnus proviennent de l'OCR local, pas des légendes Snapchat.";
+            ? "Saisissez un mot pour chercher dans les lieux, les dates, les textes reconnus et les identifiants."
+            : $"Aucun résultat pour « {q} ». Les textes reconnus proviennent de l'OCR local, pas des légendes d'origine.";
     }
 
     private void OnItemClick(object sender, ItemClickEventArgs e)
@@ -522,11 +510,14 @@ public sealed partial class SearchPage : Page
             return;
         }
 
-        var similar = VisualHashService.FindSimilar(reference.Hash, hashes, 12)
+        // FindSimilar trie déjà par distance croissante. On projette les identifiants dans cet
+        // ordre et on ne retrie jamais par date : la vue doit rester de la plus proche à la plus
+        // éloignée, même si le catalogue est chronologique.
+        var cards = VisualHashService.FindSimilar(reference.Hash, hashes, 12)
             .Where(s => s.MemoryId != referenceId)
-            .Select(s => s.MemoryId)
-            .ToHashSet();
-        var cards = AppState.Current.Cards.Where(c => similar.Contains(c.Id)).ToList();
+            .Select(s => AppState.Current.CardById(s.MemoryId))
+            .OfType<MemoryCard>()
+            .ToList();
         SimilarGrid.ItemsSource = cards;
         VisualStatus.Text = cards.Count == 0
             ? "Aucune image proche trouvée."
@@ -542,5 +533,201 @@ public sealed partial class SearchPage : Page
         }
     }
 }
+
+/// <summary>
+/// Recherche texte commune à la Bibliothèque et à l'écran Recherche. Une même requête doit
+/// produire les mêmes souvenirs sur les deux pages : mêmes champs (lieu, date, texte OCR,
+/// identifiant), même traitement du vide, des accents et de la casse.
+///
+/// Le catalogue ne propose pas de lecture OCR en lot : les textes sont chargés une fois par
+/// bibliothèque, puis mémorisés. Le cache est invalidé quand une analyse ou une suppression
+/// change les textes reconnus, et automatiquement quand la bibliothèque ouverte change.
+/// </summary>
+internal static class MemorySearch
+{
+    /// <summary>Textes reconnus du jeu de démonstration, qui n'a pas de catalogue.</summary>
+    private static readonly IReadOnlyDictionary<long, string> DemoOcr = new Dictionary<long, string>
+    {
+        [3] = "BON APREM 15:44",
+        [12] = "15:44",
+        [13] = "BON APREM",
+    };
+
+    private static MemoLibrary? _ocrLibrary;
+    private static IReadOnlyDictionary<long, string> _ocrTexts = DemoOcr;
+
+    /// <summary>
+    /// Oublie les textes reconnus mémorisés. Appelé quand une analyse ou une suppression change
+    /// le contenu des textes : la recherche suivante relit le catalogue.
+    /// </summary>
+    public static void InvalidateOcrCache()
+    {
+        _ocrLibrary = null;
+        _ocrTexts = DemoOcr;
+    }
+
+    /// <summary>
+    /// Filtre les souvenirs en conservant l'ordre reçu. Une requête vide ne restreint rien :
+    /// la Bibliothèque et la Recherche affichent alors tout le catalogue.
+    /// </summary>
+    public static async Task<List<MemoryCard>> FilterAsync(
+        IEnumerable<MemoryCard> cards,
+        string query,
+        CancellationToken ct)
+    {
+        var snapshot = cards.ToList();
+        if (IsEmpty(query))
+        {
+            return snapshot;
+        }
+
+        var ocrTexts = await LoadOcrTextsAsync(ct);
+        return snapshot.Where(card => Matches(card, query, ocrTexts)).ToList();
+    }
+
+    /// <summary>Vrai si la carte correspond ; une requête vide correspond à tout.</summary>
+    public static bool Matches(
+        MemoryCard card,
+        string query,
+        IReadOnlyDictionary<long, string>? ocrTexts)
+    {
+        var normalized = Normalize(query);
+        if (normalized.Length == 0)
+        {
+            return true;
+        }
+
+        if (ContainsNormalized(card.LocationLabel, normalized) ||
+            ContainsNormalized(card.ExternalKey, normalized))
+        {
+            return true;
+        }
+
+        // Les dates sont comparées sous trois écritures : la forme longue française déjà utilisée
+        // par la Bibliothèque, la forme courte de la Recherche, et l'ISO pour une saisie au clavier.
+        if (card.LocalDate is { } date &&
+            (ContainsNormalized(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), normalized) ||
+             ContainsNormalized(date.ToString("d MMMM yyyy", AppState.French), normalized) ||
+             ContainsNormalized(date.ToString("dddd d MMMM yyyy", AppState.French), normalized)))
+        {
+            return true;
+        }
+
+        return ocrTexts is not null &&
+               ocrTexts.TryGetValue(card.Id, out var ocrText) &&
+               ContainsNormalized(ocrText, normalized);
+    }
+
+    /// <summary>
+    /// Textes reconnus des souvenirs visibles. Une bibliothèque sans OCR, ou le jeu de
+    /// démonstration, rendent simplement les textes connus sans erreur.
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<long, string>> LoadOcrTextsAsync(CancellationToken ct)
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            return DemoOcr;
+        }
+
+        if (ReferenceEquals(_ocrLibrary, library))
+        {
+            return _ocrTexts;
+        }
+
+        // La lecture est menée hors du fil d'interface : le catalogue ouvre une connexion par
+        // souvenir, et une grande bibliothèque ne doit pas figer la fenêtre pendant la passe.
+        var cards = AppState.Current.Cards.ToList();
+        var texts = await Task.Run(
+            async () =>
+            {
+                var loaded = new Dictionary<long, string>();
+                foreach (var card in cards)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    try
+                    {
+                        var text = await library.Analysis.GetOcrTextAsync(card.Id, ct).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(text))
+                        {
+                            loaded[card.Id] = text;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException)
+                    {
+                        // Un texte illisible ne doit pas interrompre la recherche des autres souvenirs.
+                    }
+                }
+
+                return loaded;
+            },
+            ct).ConfigureAwait(true);
+
+        _ocrLibrary = library;
+        _ocrTexts = texts;
+        return texts;
+    }
+
+    /// <summary>
+    /// Forme comparable d'un texte : minuscules, accents retirés, espaces réduits. Les apostrophes
+    /// typographiques sont ramenées à l'apostrophe droite pour qu'une saisie clavier rejoigne un
+    /// texte OCR.
+    /// </summary>
+    public static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        // FormD sépare les lettres de leurs accents ; les ligatures françaises sont traitées
+        // avant, car elles ne se décomposent pas.
+        var text = value.Trim()
+            .ToLowerInvariant()
+            .Replace("œ", "oe", StringComparison.Ordinal)
+            .Replace("æ", "ae", StringComparison.Ordinal)
+            .Normalize(NormalizationForm.FormD);
+
+        var builder = new StringBuilder(text.Length);
+        var pendingSpace = false;
+        foreach (var character in text)
+        {
+            switch (CharUnicodeInfo.GetUnicodeCategory(character))
+            {
+                case UnicodeCategory.NonSpacingMark:
+                case UnicodeCategory.SpacingCombiningMark:
+                case UnicodeCategory.EnclosingMark:
+                    continue;
+            }
+
+            if (char.IsWhiteSpace(character))
+            {
+                pendingSpace = builder.Length > 0;
+                continue;
+            }
+
+            if (pendingSpace)
+            {
+                builder.Append(' ');
+                pendingSpace = false;
+            }
+
+            builder.Append(character is '’' or '‘' or '´' ? '\'' : character);
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool IsEmpty(string? query) => Normalize(query).Length == 0;
+
+    private static bool ContainsNormalized(string? value, string normalizedQuery)
+        => !string.IsNullOrEmpty(value) &&
+           Normalize(value).Contains(normalizedQuery, StringComparison.Ordinal);
+}
+
 
 
