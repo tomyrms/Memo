@@ -52,6 +52,11 @@
                         <SymbolIcon Symbol="Calendar" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Événements" Tag="events">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE787;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Recherche" Tag="search">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Find" />

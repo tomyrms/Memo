@@ -72,6 +72,7 @@ public sealed partial class ShellPage : UserControl
             "library" => typeof(LibraryPage),
             "albums" => typeof(AlbumsPage),
             "recaps" => typeof(RecapsPage),
+            "events" => typeof(EventsPage),
             "search" => typeof(SearchPage),
             "map" => typeof(MapPage),
             "imports" => typeof(ImportsPage),

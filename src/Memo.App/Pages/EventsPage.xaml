@@ -1,0 +1,14 @@
+<Page
+    x:Class="Memo.App.Pages.EventsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel
+            x:Name="Root"
+            MaxWidth="1240"
+            Margin="{StaticResource MemoPagePadding}"
+            HorizontalAlignment="Left"
+            Spacing="16" />
+    </ScrollViewer>
+</Page>
