@@ -75,6 +75,20 @@ public sealed partial class MainWindow : Window
 
     public void Navigate(string tag) => Shell.Navigate(tag);
 
+    public void ShowDay(DateOnly day)
+    {
+        var items = Services.AppState.Current.Cards
+            .Where(c => c.LocalDate == day)
+            .OrderBy(c => c.ExternalKey)
+            .ToList();
+        if (items.Count == 0)
+        {
+            Navigate("home");
+            return;
+        }
+        ShowStory(items, 0);
+    }
+
     public void ApplyTheme(string theme)
     {
         Root.RequestedTheme = theme switch
@@ -133,6 +147,7 @@ public sealed partial class MainWindow : Window
         Story.Closed -= OnStoryClosed;
     }
 }
+
 
 
 

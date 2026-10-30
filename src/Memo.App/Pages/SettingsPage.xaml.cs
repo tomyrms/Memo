@@ -1,3 +1,5 @@
+using Memo.App.Analysis;
+using Memo.App.Notifications;
 using Memo.App.Services;
 using Memo.Core;
 using Microsoft.UI.Xaml;
@@ -58,6 +60,7 @@ public sealed partial class SettingsPage : Page
             : $"{cards} souvenirs · {AppState.Current.Albums.Count} album(s)";
 
         _loading = false;
+        _ = UpdateReminderStatusAsync();
     }
 
     private static void SelectByTag(ComboBox box, string tag)
@@ -146,7 +149,48 @@ public sealed partial class SettingsPage : Page
         {
             return;
         }
-        await SaveAsync(AppState.Current.Settings with { RemindersEnabled = RemindersSwitch.IsOn });
+
+        var settings = AppState.Current.Settings with { RemindersEnabled = RemindersSwitch.IsOn };
+        await SaveAsync(settings);
+
+        if (AppState.Current.Library is null)
+        {
+            if (RemindersSwitch.IsOn)
+            {
+                Show("Rappel non planifié", "Ouvrez une bibliothèque avant d'activer un rappel.", InfoBarSeverity.Warning);
+            }
+            return;
+        }
+
+        try
+        {
+            if (RemindersSwitch.IsOn)
+            {
+                var result = await ReminderScheduler.EnableAsync(
+                    Environment.ProcessPath ?? "Memo.exe",
+                    AppState.Current.Library.Info.RootPath,
+                    settings.ReminderTime);
+                if (!result.Success)
+                {
+                    Show("Rappel non planifié", result.Message, InfoBarSeverity.Error);
+                }
+                else
+                {
+                    Show("Rappel activé", $"Une tâche Windows quotidienne est planifiée à {settings.ReminderTime}. Elle ne s'exécute que si Windows est allumé et l'utilisateur connecté.", InfoBarSeverity.Success);
+                }
+            }
+            else
+            {
+                await ReminderScheduler.DisableAsync(AppState.Current.Library.Info.Id);
+                Show("Rappel désactivé", "La tâche planifiée a été supprimée.", InfoBarSeverity.Informational);
+            }
+        }
+        catch (Exception ex)
+        {
+            Show("Rappel non configuré", ex.Message, InfoBarSeverity.Error);
+        }
+
+        await UpdateReminderStatusAsync();
     }
 
     private async void OnReminderTimeChanged(TimePicker sender, TimePickerSelectedValueChangedEventArgs args)
@@ -155,10 +199,71 @@ public sealed partial class SettingsPage : Page
         {
             return;
         }
-        await SaveAsync(AppState.Current.Settings with
+
+        var time = (args.NewTime ?? TimeSpan.FromHours(9)).ToString(@"hh\:mm");
+        var settings = AppState.Current.Settings with { ReminderTime = time };
+        await SaveAsync(settings);
+
+        if (settings.RemindersEnabled && AppState.Current.Library is not null)
         {
-            ReminderTime = (args.NewTime ?? TimeSpan.FromHours(9)).ToString(@"hh\:mm")
-        });
+            try
+            {
+                await ReminderScheduler.DisableAsync(AppState.Current.Library.Info.Id);
+                await ReminderScheduler.EnableAsync(
+                    Environment.ProcessPath ?? "Memo.exe",
+                    AppState.Current.Library.Info.RootPath,
+                    time);
+            }
+            catch (Exception ex)
+            {
+                Show("Heure non appliquée", ex.Message, InfoBarSeverity.Warning);
+            }
+        }
+        await UpdateReminderStatusAsync();
+    }
+
+    private async void OnTestReminder(object sender, RoutedEventArgs e)
+    {
+        if (AppState.Current.Library is null)
+        {
+            Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de tester un rappel.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        try
+        {
+            var result = await ReminderRunner.RunAsync(
+                AppState.Current.Library.Info.RootPath,
+                new ReminderRunOptions { IgnoreRemindersSetting = true, IgnoreAlreadyNotified = true });
+            Show(result.NotificationShown ? "Notification envoyée" : "Notification non envoyée",
+                result.Diagnostic,
+                result.NotificationShown ? InfoBarSeverity.Success : InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Show("Test impossible", ex.Message, InfoBarSeverity.Error);
+        }
+    }
+
+    private async Task UpdateReminderStatusAsync()
+    {
+        if (AppState.Current.Library is null)
+        {
+            ReminderStatus.Text = "Aucune bibliothèque ouverte.";
+            return;
+        }
+
+        try
+        {
+            var status = await ReminderScheduler.GetStatusAsync(AppState.Current.Library.Info.Id);
+            ReminderStatus.Text = status.Exists
+                ? $"Tâche planifiée · {status.StartTime} · {status.LastResultText}"
+                : "Aucune tâche planifiée.";
+        }
+        catch (Exception ex)
+        {
+            ReminderStatus.Text = "État indisponible : " + ex.Message;
+        }
     }
 
     private async void OnDiscreetChanged(object sender, RoutedEventArgs e)
@@ -356,6 +461,66 @@ public sealed partial class SettingsPage : Page
         await dialog.ShowAsync();
     }
 
+    private CancellationTokenSource? _analysisCts;
+
+    private async void OnAnalyze(object sender, RoutedEventArgs e)
+    {
+        if (AppState.Current.Library is null)
+        {
+            Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de lancer l'analyse.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        _analysisCts = new CancellationTokenSource();
+        AnalyzeButton.IsEnabled = false;
+        CancelAnalysisButton.Visibility = Visibility.Visible;
+        AnalysisProgress.Visibility = Visibility.Visible;
+        AnalysisProgress.Value = 0;
+        AnalysisStatus.Text = "Préparation…";
+
+        try
+        {
+            var runner = new AnalysisRunner(AppState.Current.Library);
+            var options = new AnalysisRunOptions
+            {
+                Ocr = OcrSwitch.IsOn,
+                VisualHash = true,
+                Faces = FacesSwitch.IsOn,
+                SkipExisting = false
+            };
+            var progress = new Progress<AnalysisProgress>(p =>
+            {
+                AnalysisProgress.Maximum = Math.Max(1, p.Total);
+                AnalysisProgress.Value = Math.Min(p.Done, p.Total);
+                AnalysisStatus.Text = $"{p.Message} ({p.Done}/{p.Total})";
+            });
+            var summary = await runner.RunAsync(options, progress, _analysisCts.Token);
+            AnalysisStatus.Text = $"{summary.OcrCompleted} OCR · {summary.VisualHashesCompleted} empreintes · {summary.FacesDetected} visages · {summary.FaceGroupsCreated} groupes";
+            Show("Analyse terminée",
+                summary.Error ?? $"Traitement local terminé en {summary.Duration.TotalSeconds:0} s. Les résultats sont corrigeables et supprimables.",
+                InfoBarSeverity.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            AnalysisStatus.Text = "Analyse annulée.";
+        }
+        catch (Exception ex)
+        {
+            AnalysisStatus.Text = "Analyse interrompue.";
+            Show("Analyse impossible", ex.Message, InfoBarSeverity.Error);
+        }
+        finally
+        {
+            _analysisCts.Dispose();
+            _analysisCts = null;
+            AnalyzeButton.IsEnabled = true;
+            CancelAnalysisButton.Visibility = Visibility.Collapsed;
+            AnalysisProgress.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OnCancelAnalysis(object sender, RoutedEventArgs e) => _analysisCts?.Cancel();
+
     private void Show(string title, string message, InfoBarSeverity severity)
     {
         Notice.Title = title;
@@ -364,6 +529,7 @@ public sealed partial class SettingsPage : Page
         Notice.IsOpen = true;
     }
 }
+
 
 
 

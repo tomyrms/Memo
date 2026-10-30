@@ -1,3 +1,4 @@
+using Memo.App.Notifications;
 using Microsoft.UI.Xaml;
 
 namespace Memo.App;
@@ -27,19 +28,50 @@ public partial class App : Application
         }
     }
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        ToastService.Current.Activated += OnToastActivated;
+        ToastService.Current.Register();
+
         try
         {
+            var startup = await ReminderRunner.TryHandleStartupAsync(Environment.GetCommandLineArgs());
+            if (startup.Kind == ReminderStartupKind.ReminderInvocation)
+            {
+                Environment.Exit(startup.Reminder?.ExitCode ?? 0);
+                return;
+            }
+
             _window = new MainWindow();
             MainWindow = _window;
             _window.Activate();
+
+            if (startup.Kind == ReminderStartupKind.NotificationActivation && startup.Activation?.Day is DateOnly day)
+            {
+                _window.ShowDay(day);
+            }
         }
         catch (Exception ex)
         {
             Log(ex);
-            throw;
+            if (_window is null)
+            {
+                _window = new MainWindow();
+                MainWindow = _window;
+                _window.Activate();
+            }
         }
+    }
+
+    private void OnToastActivated(object? sender, ToastActivatedEventArgs e)
+    {
+        MainWindow?.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (e.Activation.Day is DateOnly day)
+            {
+                MainWindow?.ShowDay(day);
+            }
+        });
     }
 
     private static void Log(Exception? ex)
@@ -55,3 +87,4 @@ public partial class App : Application
         }
     }
 }
+
