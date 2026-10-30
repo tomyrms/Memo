@@ -1,0 +1,173 @@
+<Page
+    x:Class="Memo.App.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="920" Margin="32,24,32,32" HorizontalAlignment="Left" Spacing="16">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Réglages" Style="{StaticResource MemoTitleTextStyle}" />
+                <TextBlock
+                    Style="{StaticResource MemoSecondaryTextStyle}"
+                    Text="La bibliothèque, les dates, la lecture et les analyses facultatives. Tout reste local." />
+            </StackPanel>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Bibliothèque" Style="{StaticResource MemoSectionTextStyle}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock x:Name="LibraryPath" Style="{StaticResource MemoBodyTextStyle}" Text="Aucune bibliothèque ouverte" />
+                            <TextBlock x:Name="LibraryStats" Style="{StaticResource MemoCaptionTextStyle}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                            <Button Click="OnOpenLibrary" Content="Ouvrir" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                            <Button Click="OnCreateLibrary" Content="Créer" Style="{StaticResource MemoPrimaryButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Les fichiers importés ne sont jamais réécrits. Une bibliothèque peut être déplacée puis rouverte depuis son nouveau dossier." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Apparence" Style="{StaticResource MemoSectionTextStyle}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Thème" Style="{StaticResource MemoBodyTextStyle}" VerticalAlignment="Center" />
+                        <ComboBox x:Name="ThemeBox" Grid.Column="1" MaxWidth="220" HorizontalAlignment="Left" SelectionChanged="OnThemeChanged" Style="{StaticResource MemoComboBoxStyle}">
+                            <ComboBoxItem Content="Système" Tag="System" IsSelected="True" />
+                            <ComboBoxItem Content="Clair" Tag="Light" />
+                            <ComboBoxItem Content="Sombre" Tag="Dark" />
+                        </ComboBox>
+                    </Grid>
+                    <ToggleSwitch
+                        x:Name="MotionSwitch"
+                        Header="Réduire les animations"
+                        OffContent="Animations système"
+                        OnContent="Réduites"
+                        Toggled="OnMotionChanged" />
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Le réglage Windows de réduction des animations reste prioritaire." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Lecture" Style="{StaticResource MemoSectionTextStyle}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Durée d'une photo" Style="{StaticResource MemoBodyTextStyle}" VerticalAlignment="Center" />
+                        <NumberBox
+                            x:Name="PhotoDuration"
+                            Grid.Column="1"
+                            Width="120"
+                            HorizontalAlignment="Left"
+                            Minimum="1"
+                            Maximum="20"
+                            SmallChange="1"
+                            SpinButtonPlacementMode="Compact"
+                            ValueChanged="OnPhotoDurationChanged" />
+                    </Grid>
+                    <ToggleSwitch x:Name="AutoplaySwitch" Header="Lire les vidéos automatiquement dans une Story" Toggled="OnPlaybackChanged" />
+                    <ToggleSwitch x:Name="AudioSwitch" Header="Activer le son" Toggled="OnPlaybackChanged" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Dates et fuseau" Style="{StaticResource MemoSectionTextStyle}" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Fuseau de classement" Style="{StaticResource MemoBodyTextStyle}" VerticalAlignment="Center" />
+                        <ComboBox
+                            x:Name="TimeZoneBox"
+                            Grid.Column="1"
+                            MaxWidth="360"
+                            HorizontalAlignment="Left"
+                            SelectionChanged="OnTimeZoneChanged"
+                            Style="{StaticResource MemoComboBoxStyle}" />
+                    </Grid>
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Le jour d'un souvenir est calculé dans ce fuseau, sans modifier l'instant d'origine. Changer de fuseau peut déplacer un souvenir d'un jour." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Rappels" Style="{StaticResource MemoSectionTextStyle}" />
+                    <ToggleSwitch x:Name="RemindersSwitch" Header="Rappel quotidien" Toggled="OnRemindersChanged" />
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="220" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Heure" Style="{StaticResource MemoBodyTextStyle}" VerticalAlignment="Center" />
+                        <TimePicker x:Name="ReminderTime" Grid.Column="1" ClockIdentifier="24HourClock" SelectedTimeChanged="OnReminderTimeChanged" />
+                    </Grid>
+                    <ToggleSwitch x:Name="DiscreetSwitch" Header="Notification discrète (sans miniature ni nom)" Toggled="OnDiscreetChanged" />
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Aucun rappel n'est activé par défaut. Quand la fenêtre est fermée, une tâche Windows planifiée peut ouvrir Memo pour afficher la notification ; ce comportement sera indiqué à l'activation." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Analyses locales facultatives" Style="{StaticResource MemoSectionTextStyle}" />
+                    <ToggleSwitch x:Name="OcrSwitch" Header="Reconnaître le texte des images (OCR)" Toggled="OnAnalysisChanged" />
+                    <ToggleSwitch x:Name="FacesSwitch" Header="Détecter et regrouper les visages" Toggled="OnAnalysisChanged" />
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Ces traitements s'exécutent sur ce PC. Aucun média n'est envoyé à un service distant. Les résultats peuvent être supprimés sans effacer les souvenirs." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Sauvegarde et restauration" Style="{StaticResource MemoSectionTextStyle}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Click="OnBackup" Content="Sauvegarder la bibliothèque" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        <Button Click="OnRestore" Content="Restaurer une sauvegarde" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </StackPanel>
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="La sauvegarde contient le catalogue, les médias sources, les albums, les favoris, les exclusions et les dates corrigées. Les caches reconstructibles sont exclus." />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="À propos" Style="{StaticResource MemoSectionTextStyle}" />
+                    <TextBlock x:Name="VersionLabel" Style="{StaticResource MemoBodyTextStyle}" />
+                    <TextBlock
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        Text="Memo est un projet indépendant, sans affiliation avec Snapchat ou Snap. VideoLAN LibVLC est distribué sous LGPL 2.1 ; SkiaSharp sous licence MIT." />
+                    <HyperlinkButton Click="OnOpenLicenses" Content="Licences et composants" />
+                </StackPanel>
+            </Border>
+
+            <InfoBar
+                x:Name="Notice"
+                IsClosable="True"
+                IsOpen="False" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

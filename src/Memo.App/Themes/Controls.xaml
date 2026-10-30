@@ -8,6 +8,13 @@
     <Thickness x:Key="MemoPagePadding">32,24,32,32</Thickness>
     <Thickness x:Key="MemoCardPadding">16</Thickness>
 
+    <!-- Focus clavier natif conservé, teinté avec l'accent Memo. -->
+    <SolidColorBrush x:Key="FocusVisualPrimaryBrush" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="FocusVisualSecondaryBrush" Color="Transparent" />
+    <Thickness x:Key="FocusVisualPrimaryThickness">2</Thickness>
+    <Thickness x:Key="FocusVisualSecondaryThickness">0</Thickness>
+    <Thickness x:Key="FocusVisualMargin">1</Thickness>
+
     <Style x:Key="MemoPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
         <Setter Property="CornerRadius" Value="{StaticResource MemoControlCornerRadius}" />
         <Setter Property="Padding" Value="16,8" />

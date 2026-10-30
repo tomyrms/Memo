@@ -1,0 +1,116 @@
+<UserControl
+    x:Class="Memo.App.Controls.MemoryTile"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Width="180"
+    Height="240">
+
+    <Grid>
+        <Border
+            Background="{ThemeResource MemoPhotoPlaceholderBrush}"
+            CornerRadius="{StaticResource MemoCardCornerRadius}">
+            <Image
+                x:Name="Thumb"
+                Stretch="UniformToFill" />
+        </Border>
+
+        <Border
+            x:Name="MissingLayer"
+            Background="{ThemeResource MemoSurfaceAltBrush}"
+            CornerRadius="{StaticResource MemoCardCornerRadius}"
+            Visibility="Collapsed">
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="8">
+                <FontIcon
+                    FontSize="24"
+                    Foreground="{ThemeResource MemoTextSecondaryBrush}"
+                    Glyph="&#xE7BA;" />
+                <TextBlock
+                    MaxWidth="140"
+                    HorizontalTextAlignment="Center"
+                    Style="{StaticResource MemoCaptionTextStyle}"
+                    Text="Calque seul" />
+            </StackPanel>
+        </Border>
+
+        <Border
+            x:Name="TypeBadge"
+            Margin="8"
+            Padding="6,2"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Background="#B3000000"
+            CornerRadius="3">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <FontIcon
+                    x:Name="TypeIcon"
+                    FontSize="12"
+                    Foreground="White"
+                    Glyph="&#xE768;" />
+                <TextBlock
+                    x:Name="TypeText"
+                    FontSize="12"
+                    Foreground="White" />
+            </StackPanel>
+        </Border>
+
+        <Border
+            x:Name="FavoriteBadge"
+            Margin="8"
+            Padding="5,3"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Background="#B3000000"
+            CornerRadius="3"
+            Visibility="Collapsed">
+            <FontIcon
+                FontSize="12"
+                Foreground="#F6D9A8"
+                Glyph="&#xE735;" />
+        </Border>
+
+        <Border
+            x:Name="DateBadge"
+            Margin="8"
+            Padding="6,2"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Bottom"
+            Background="#B3000000"
+            CornerRadius="3"
+            Visibility="Collapsed">
+            <TextBlock
+                x:Name="DateText"
+                FontSize="12"
+                Foreground="White" />
+        </Border>
+
+        <Border
+            x:Name="ExcludedBadge"
+            Margin="8"
+            Padding="6,2"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Background="{ThemeResource MemoSurfaceBrush}"
+            BorderBrush="{ThemeResource MemoBorderBrush}"
+            BorderThickness="1"
+            CornerRadius="3"
+            Visibility="Collapsed">
+            <TextBlock
+                FontSize="12"
+                Foreground="{ThemeResource MemoTextSecondaryBrush}"
+                Text="Masqué" />
+        </Border>
+
+        <ProgressRing
+            x:Name="Loading"
+            Width="20"
+            Height="20"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            IsActive="True"
+            Visibility="Collapsed" />
+    </Grid>
+</UserControl>
+

@@ -1,0 +1,150 @@
+<Page
+    x:Class="Memo.App.Pages.RecapsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Memo.App.Controls"
+    NavigationCacheMode="Required">
+    <Page.Resources>
+        <DataTemplate x:Key="EditItemTemplate">
+            <Grid ColumnSpacing="12" Padding="0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="60" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock
+                    Text="{Binding LocalDate}"
+                    Style="{StaticResource MemoSecondaryTextStyle}" />
+                <TextBlock
+                    Grid.Column="1"
+                    Text="{Binding Kind}"
+                    Style="{StaticResource MemoCaptionTextStyle}" />
+                <TextBlock
+                    Grid.Column="2"
+                    Text="{Binding LocationLabel}"
+                    Style="{StaticResource MemoBodyTextStyle}"
+                    TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="1240" Margin="32,24,32,32" HorizontalAlignment="Left" Spacing="16">
+            <StackPanel Spacing="4">
+                <TextBlock Text="Récapitulatifs" Style="{StaticResource MemoTitleTextStyle}" />
+                <TextBlock
+                    Style="{StaticResource MemoSecondaryTextStyle}"
+                    Text="Une sélection répartie sur une période, modifiable avant de la conserver." />
+            </StackPanel>
+
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ComboBox
+                    x:Name="KindBox"
+                    MinWidth="130"
+                    SelectionChanged="OnKindChanged"
+                    Style="{StaticResource MemoComboBoxStyle}">
+                    <ComboBoxItem Content="Année" Tag="year" IsSelected="True" />
+                    <ComboBoxItem Content="Mois" Tag="month" />
+                    <ComboBoxItem Content="Saison" Tag="season" />
+                </ComboBox>
+                <ComboBox
+                    x:Name="PeriodBox"
+                    Grid.Column="1"
+                    MinWidth="180"
+                    SelectionChanged="OnPeriodChanged"
+                    Style="{StaticResource MemoComboBoxStyle}" />
+                <Button
+                    Grid.Column="2"
+                    Click="OnGenerate"
+                    Content="Générer"
+                    Style="{StaticResource MemoPrimaryButtonStyle}" />
+                <TextBlock
+                    x:Name="CoverageLabel"
+                    Grid.Column="3"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource MemoCaptionTextStyle}" />
+            </Grid>
+
+            <Border
+                MaxWidth="920"
+                HorizontalAlignment="Left"
+                Style="{StaticResource MemoCardBorderStyle}"
+                Padding="16">
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Grid Width="300" Height="200">
+                        <Border
+                            x:Name="Cover"
+                            Background="{ThemeResource MemoPhotoPlaceholderBrush}"
+                            CornerRadius="4">
+                            <Image x:Name="CoverImage" Stretch="UniformToFill" />
+                        </Border>
+                        <Border
+                            x:Name="CoverBadge"
+                            Margin="8"
+                            Padding="6,2"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            Background="#B3000000"
+                            CornerRadius="3"
+                            Visibility="Collapsed">
+                            <TextBlock
+                                x:Name="CoverCount"
+                                FontSize="12"
+                                Foreground="White" />
+                        </Border>
+                    </Grid>
+
+                    <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                        <TextBlock x:Name="RecapTitle" Style="{StaticResource MemoSubtitleTextStyle}" Text="Aucune sélection" />
+                        <TextBlock x:Name="RecapMeta" Style="{StaticResource MemoSecondaryTextStyle}" />
+                        <TextBlock
+                            x:Name="CoverageNote"
+                            Style="{StaticResource MemoCaptionTextStyle}"
+                            Text="La couverture dépend des dates disponibles ; les médias non datés ne sont pas comptés." />
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,10,0,0">
+                            <Button Click="OnPlay" Content="Lire la Story" Style="{StaticResource MemoPrimaryButtonStyle}" />
+                            <Button Click="OnEdit" Content="Modifier la sélection" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                            <Button Click="OnSave" Content="Enregistrer" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <InfoBar
+                x:Name="Notice"
+                IsClosable="True"
+                IsOpen="False"
+                Severity="Success" />
+
+            <GridView
+                x:Name="ItemsGrid"
+                IsItemClickEnabled="True"
+                ItemClick="OnItemClick"
+                SelectionMode="None">
+                <GridView.ItemTemplate>
+                    <DataTemplate>
+                        <controls:MemoryTile Card="{Binding}" ShowDate="True" />
+                    </DataTemplate>
+                </GridView.ItemTemplate>
+                <GridView.ItemContainerStyle>
+                    <Style TargetType="GridViewItem">
+                        <Setter Property="Margin" Value="0,0,8,8" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="MinWidth" Value="0" />
+                        <Setter Property="MinHeight" Value="0" />
+                    </Style>
+                </GridView.ItemContainerStyle>
+            </GridView>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

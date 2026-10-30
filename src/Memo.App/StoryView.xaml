@@ -1,0 +1,177 @@
+<UserControl
+    x:Class="Memo.App.StoryView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vlc="using:LibVLCSharp.Platforms.Windows"
+    IsTabStop="True"
+    KeyDown="OnKeyDown">
+
+    <Grid Background="#0E0D0C">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid
+            x:Name="ProgressPanel"
+            Grid.Row="0"
+            Margin="20,14,20,0" />
+
+        <Grid
+            x:Name="Stage"
+            Grid.Row="1"
+            Margin="32,16,32,16"
+            SizeChanged="OnStageSizeChanged">
+            <Image
+                x:Name="Photo"
+                Stretch="Uniform" />
+            <vlc:VideoView
+                x:Name="Video"
+                Visibility="Collapsed" />
+            <Canvas x:Name="OverlayLayer" IsHitTestVisible="False">
+                <Image
+                    x:Name="OverlayImage"
+                    Stretch="Fill"
+                    Visibility="Collapsed" />
+            </Canvas>
+
+            <Button
+                x:Name="BigPlay"
+                Width="64"
+                Height="64"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="#B3000000"
+                BorderThickness="0"
+                Click="OnPlayPause"
+                CornerRadius="32"
+                Visibility="Collapsed">
+                <FontIcon
+                    FontSize="24"
+                    Foreground="White"
+                    Glyph="&#xE768;" />
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="32,0,32,18">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <StackPanel
+                x:Name="Caption"
+                VerticalAlignment="Center"
+                Spacing="2">
+                <TextBlock
+                    x:Name="CaptionTitle"
+                    FontSize="15"
+                    Foreground="#F4EFE7" />
+                <TextBlock
+                    x:Name="CaptionSubtitle"
+                    FontSize="12"
+                    Foreground="#B0A79A" />
+            </StackPanel>
+
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="4">
+                <Button
+                    x:Name="OverlayButton"
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnToggleOverlay"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Afficher ou masquer le calque (O)">
+                    <FontIcon
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE790;" />
+                </Button>
+                <Button
+                    x:Name="MuteButton"
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnToggleMute"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Couper le son (M)">
+                    <FontIcon
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE767;" />
+                </Button>
+                <Button
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnPrevious"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Précédent (flèche gauche)">
+                    <FontIcon
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE892;" />
+                </Button>
+                <Button
+                    x:Name="PlayButton"
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnPlayPause"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Lecture ou pause (espace)">
+                    <FontIcon
+                        x:Name="PlayIcon"
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE769;" />
+                </Button>
+                <Button
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnNext"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Suivant (flèche droite)">
+                    <FontIcon
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE893;" />
+                </Button>
+                <Button
+                    Width="40"
+                    Height="40"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Click="OnClose"
+                    CornerRadius="20"
+                    ToolTipService.ToolTip="Fermer (Échap)">
+                    <FontIcon
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Glyph="&#xE711;" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <Grid
+            Grid.Row="0"
+            Margin="32,44,32,0"
+            VerticalAlignment="Top">
+            <TextBlock
+                x:Name="Counter"
+                HorizontalAlignment="Right"
+                FontSize="12"
+                Foreground="#B0A79A" />
+        </Grid>
+    </Grid>
+</UserControl>

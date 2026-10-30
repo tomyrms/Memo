@@ -11,11 +11,18 @@
             <Color x:Key="MemoTextColor">#1D1A16</Color>
             <Color x:Key="MemoTextSecondaryColor">#5F594F</Color>
             <Color x:Key="MemoAccentColor">#A64B1E</Color>
+            <Color x:Key="MemoAccentHoverColor">#8F3F17</Color>
+            <Color x:Key="MemoAccentPressedColor">#783311</Color>
             <Color x:Key="MemoAccentTextColor">#FFFFFF</Color>
             <Color x:Key="MemoAccentSoftColor">#F2E0D1</Color>
             <Color x:Key="MemoDangerColor">#A33A2A</Color>
             <Color x:Key="MemoSuccessColor">#2F6B4F</Color>
             <Color x:Key="MemoScrimColor">#B3000000</Color>
+            <Color x:Key="SystemAccentColor">#A64B1E</Color>
+            <Color x:Key="SystemAccentColorLight1">#B85A2A</Color>
+            <Color x:Key="SystemAccentColorLight2">#C76A38</Color>
+            <Color x:Key="SystemAccentColorDark1">#8F3F17</Color>
+            <Color x:Key="SystemAccentColorDark2">#783311</Color>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Light">
             <Color x:Key="MemoBackgroundColor">#F4F1EC</Color>
@@ -25,11 +32,18 @@
             <Color x:Key="MemoTextColor">#1D1A16</Color>
             <Color x:Key="MemoTextSecondaryColor">#5F594F</Color>
             <Color x:Key="MemoAccentColor">#A64B1E</Color>
+            <Color x:Key="MemoAccentHoverColor">#8F3F17</Color>
+            <Color x:Key="MemoAccentPressedColor">#783311</Color>
             <Color x:Key="MemoAccentTextColor">#FFFFFF</Color>
             <Color x:Key="MemoAccentSoftColor">#F2E0D1</Color>
             <Color x:Key="MemoDangerColor">#A33A2A</Color>
             <Color x:Key="MemoSuccessColor">#2F6B4F</Color>
             <Color x:Key="MemoScrimColor">#B3000000</Color>
+            <Color x:Key="SystemAccentColor">#A64B1E</Color>
+            <Color x:Key="SystemAccentColorLight1">#B85A2A</Color>
+            <Color x:Key="SystemAccentColorLight2">#C76A38</Color>
+            <Color x:Key="SystemAccentColorDark1">#8F3F17</Color>
+            <Color x:Key="SystemAccentColorDark2">#783311</Color>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <Color x:Key="MemoBackgroundColor">#141210</Color>
@@ -39,11 +53,18 @@
             <Color x:Key="MemoTextColor">#F4EFE7</Color>
             <Color x:Key="MemoTextSecondaryColor">#B0A79A</Color>
             <Color x:Key="MemoAccentColor">#E39A5C</Color>
+            <Color x:Key="MemoAccentHoverColor">#EFAF78</Color>
+            <Color x:Key="MemoAccentPressedColor">#F5BF8F</Color>
             <Color x:Key="MemoAccentTextColor">#241407</Color>
             <Color x:Key="MemoAccentSoftColor">#3A2A1C</Color>
             <Color x:Key="MemoDangerColor">#E07A67</Color>
             <Color x:Key="MemoSuccessColor">#7FB79B</Color>
             <Color x:Key="MemoScrimColor">#CC000000</Color>
+            <Color x:Key="SystemAccentColor">#E39A5C</Color>
+            <Color x:Key="SystemAccentColorLight1">#EFAF78</Color>
+            <Color x:Key="SystemAccentColorLight2">#F5BF8F</Color>
+            <Color x:Key="SystemAccentColorDark1">#C97F44</Color>
+            <Color x:Key="SystemAccentColorDark2">#A96632</Color>
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 
@@ -61,5 +82,19 @@
     <SolidColorBrush x:Key="MemoScrimBrush" Color="{ThemeResource MemoScrimColor}" />
     <SolidColorBrush x:Key="MemoPhotoBackdropBrush" Color="#0E0D0C" />
     <SolidColorBrush x:Key="MemoPhotoPlaceholderBrush" Color="{ThemeResource MemoSurfaceAltColor}" />
+
+    <!-- L'accent système est remplacé par le brun chaud de Memo. -->
+    <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="SystemControlHighlightAccentBrush" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="SystemControlForegroundAccentBrush" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="AccentButtonBackground" Color="{ThemeResource MemoAccentColor}" />
+    <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="{ThemeResource MemoAccentHoverColor}" />
+    <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="{ThemeResource MemoAccentPressedColor}" />
+    <SolidColorBrush x:Key="AccentButtonForeground" Color="{ThemeResource MemoAccentTextColor}" />
+    <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="{ThemeResource MemoAccentTextColor}" />
+    <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="{ThemeResource MemoAccentTextColor}" />
+    <SolidColorBrush x:Key="AccentButtonBorderBrush" Color="{ThemeResource MemoAccentColor}" />
 
 </ResourceDictionary>

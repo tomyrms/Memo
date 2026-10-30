@@ -2,8 +2,12 @@
     x:Class="Memo.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Memo.App"
     Title="Memo">
-    <Grid Background="{ThemeResource MemoBackgroundBrush}">
-        <TextBlock Text="Memo" Style="{StaticResource MemoTitleTextStyle}" Margin="32" />
+    <Grid x:Name="Root" Background="{ThemeResource MemoBackgroundBrush}">
+        <local:ShellPage x:Name="Shell" />
+        <local:StoryView
+            x:Name="Story"
+            Visibility="Collapsed" />
     </Grid>
 </Window>
