@@ -24,6 +24,15 @@ La consultation et les fonctions de redécouverte fonctionnent hors ligne une fo
 - **Données locales.** Pas de compte pour consulter sa bibliothèque, pas d'envoi des médias à un service d'analyse. Les fonctions d'analyse locale avancées sont facultatives.
 - **Développement avec des exemples synthétiques.** Aucun export personnel, historique de compte, jeton de téléchargement ou inventaire nominatif dans le dépôt.
 
+## Suivi du développement
+
+[Consulter les 20 issues](https://github.com/tomyrms/Memo/issues). Chaque issue contient sa priorité, sa phase, ses dépendances et ses critères d’acceptation. Les fonctions sont planifiées ; elles ne sont pas encore implémentées.
+
+- [Import de plusieurs ZIP — #3](https://github.com/tomyrms/Memo/issues/3)
+- [Ce jour-là — #9](https://github.com/tomyrms/Memo/issues/9)
+- [Récapitulatifs — #14](https://github.com/tomyrms/Memo/issues/14)
+- [À redécouvrir et Surprends-moi — #20](https://github.com/tomyrms/Memo/issues/20)
+
 ## Documentation
 
 | Document | Contenu |

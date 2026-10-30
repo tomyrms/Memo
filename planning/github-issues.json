@@ -1,0 +1,126 @@
+{
+  "repository": "tomyrms/Memo",
+  "published_on": "2026-10-30",
+  "issues": [
+    {
+      "id": "SD-001",
+      "number": 1,
+      "url": "https://github.com/tomyrms/Memo/issues/1",
+      "title": "Définir le socle Windows et la bibliothèque locale"
+    },
+    {
+      "id": "SD-002",
+      "number": 2,
+      "url": "https://github.com/tomyrms/Memo/issues/2",
+      "title": "Définir les formats reconnus et un corpus synthétique de validation"
+    },
+    {
+      "id": "SD-003",
+      "number": 3,
+      "url": "https://github.com/tomyrms/Memo/issues/3",
+      "title": "Importer plusieurs ZIP avec reprise et ajout progressif"
+    },
+    {
+      "id": "SD-004",
+      "number": 4,
+      "url": "https://github.com/tomyrms/Memo/issues/4",
+      "title": "Associer les médias entre archives et rendre les réimports idempotents"
+    },
+    {
+      "id": "SD-005",
+      "number": 5,
+      "url": "https://github.com/tomyrms/Memo/issues/5",
+      "title": "Décoder les médias et afficher les calques avec la bonne orientation"
+    },
+    {
+      "id": "SD-006",
+      "number": 6,
+      "url": "https://github.com/tomyrms/Memo/issues/6",
+      "title": "Gérer les dates, leur provenance et les fuseaux horaires"
+    },
+    {
+      "id": "SD-007",
+      "number": 7,
+      "url": "https://github.com/tomyrms/Memo/issues/7",
+      "title": "Construire la galerie chronologique et les vues à compléter"
+    },
+    {
+      "id": "SD-008",
+      "number": 8,
+      "url": "https://github.com/tomyrms/Memo/issues/8",
+      "title": "Lire les souvenirs à la suite façon Story"
+    },
+    {
+      "id": "SD-009",
+      "number": 9,
+      "url": "https://github.com/tomyrms/Memo/issues/9",
+      "title": "Ajouter Ce jour-là sur toutes les années disponibles"
+    },
+    {
+      "id": "SD-010",
+      "number": 10,
+      "url": "https://github.com/tomyrms/Memo/issues/10",
+      "title": "Télécharger les médias des exports contenant un index de liens"
+    },
+    {
+      "id": "SD-011",
+      "number": 11,
+      "url": "https://github.com/tomyrms/Memo/issues/11",
+      "title": "Ajouter albums, favoris et exclusions des suggestions"
+    },
+    {
+      "id": "SD-012",
+      "number": 12,
+      "url": "https://github.com/tomyrms/Memo/issues/12",
+      "title": "Sauvegarder et restaurer une bibliothèque portable"
+    },
+    {
+      "id": "SD-013",
+      "number": 13,
+      "url": "https://github.com/tomyrms/Memo/issues/13",
+      "title": "Distribuer une première version Windows installable et accessible"
+    },
+    {
+      "id": "SD-014",
+      "number": 14,
+      "url": "https://github.com/tomyrms/Memo/issues/14",
+      "title": "Générer des récapitulatifs annuels, mensuels et saisonniers"
+    },
+    {
+      "id": "SD-015",
+      "number": 15,
+      "url": "https://github.com/tomyrms/Memo/issues/15",
+      "title": "Proposer des rappels Windows facultatifs"
+    },
+    {
+      "id": "SD-016",
+      "number": 16,
+      "url": "https://github.com/tomyrms/Memo/issues/16",
+      "title": "Suggérer des événements et afficher les lieux disponibles"
+    },
+    {
+      "id": "SD-017",
+      "number": 17,
+      "url": "https://github.com/tomyrms/Memo/issues/17",
+      "title": "Exporter une Story ou un récapitulatif en vidéo"
+    },
+    {
+      "id": "SD-018",
+      "number": 18,
+      "url": "https://github.com/tomyrms/Memo/issues/18",
+      "title": "Ajouter OCR et recherche visuelle locale facultative"
+    },
+    {
+      "id": "SD-019",
+      "number": 19,
+      "url": "https://github.com/tomyrms/Memo/issues/19",
+      "title": "Regrouper les souvenirs par personnes de manière facultative"
+    },
+    {
+      "id": "SD-020",
+      "number": 20,
+      "url": "https://github.com/tomyrms/Memo/issues/20",
+      "title": "Créer l’accueil À redécouvrir et le mode Surprends-moi"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+name: Signaler un problème
+description: Décrire un problème de l'application sans joindre de données privées.
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Ne joignez pas votre export Snapchat complet ni de liens contenant des jetons. Privilégiez un exemple synthétique ou un diagnostic expurgé."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problème et résultat attendu
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour reproduire
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de l'application et de Windows
+  - type: textarea
+    id: import
+    attributes:
+      label: Informations techniques utiles
+      description: Nombre d'archives importées, types de médias, présence de calques et message d'erreur, sans informations personnelles.

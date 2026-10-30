@@ -1,0 +1,360 @@
+{
+  "schema_version": "1.0",
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "MVP — Importer, consulter et retrouver ses souvenirs",
+      "description": "Application Windows locale : import de plusieurs ZIP, rapprochement et réimport, rendu des médias et calques, dates explicites, galerie, lecture Story, Ce jour-là, albums, favoris, sauvegarde et distribution. Les adaptateurs d’index ou de liens ne sont activés que pour des formats effectivement validés."
+    },
+    {
+      "id": "M2",
+      "title": "Redécouverte — Récapitulatifs, rappels et collections",
+      "description": "Récapitulatifs modifiables, notifications Windows facultatives, suggestions d’événements, lieux réellement disponibles et export vidéo des sélections."
+    },
+    {
+      "id": "M3",
+      "title": "Avancé — Recherche locale facultative",
+      "description": "Reconnaissance de texte, recherche visuelle et regroupement par personnes, activables séparément et exécutés localement, avec correction et suppression des données dérivées."
+    }
+  ],
+  "issues": [
+    {
+      "id": "SD-001",
+      "title": "Définir le socle Windows et la bibliothèque locale",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "documentation"
+      ],
+      "depends_on": [],
+      "body": "## Pourquoi\n\nLa bibliothèque doit rester consultable hors ligne, préserver les fichiers importés et pouvoir évoluer sans perdre les personnalisations.\n\n## Portée\n\n- Documenter la pile retenue pour Windows, le catalogue local, les migrations et la distribution des dépendances.\n- Séparer fichiers sources immuables, souvenirs logiques, métadonnées, miniatures et autres données dérivées.\n- Définir des espaces sources distincts pour les comptes ou collections qui ne doivent pas être fusionnés.\n\n## Critères d’acceptation\n\n- [ ] Une décision d’architecture décrit les choix, leurs limites et les composants distribués ; aucune pile n’est considérée choisie par ce backlog seul.\n- [ ] Les fonctions de consultation des médias déjà récupérés fonctionnent hors ligne.\n- [ ] Les transformations et corrections ne réécrivent pas les fichiers sources.\n- [ ] Le modèle prévoit la provenance des données, les espaces sources et l’évolution du catalogue.\n\n## Validation pertinente\n\nRevue de la décision d’architecture et vérification d’un parcours minimal d’ouverture d’une bibliothèque locale, avec une migration représentative lorsqu’elle sera nécessaire.\n",
+      "github_issue_number": 1,
+      "github_url": "https://github.com/tomyrms/Memo/issues/1"
+    },
+    {
+      "id": "SD-002",
+      "title": "Définir les formats reconnus et un corpus synthétique de validation",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "documentation"
+      ],
+      "depends_on": [
+        "SD-001"
+      ],
+      "body": "## Pourquoi\n\nUn ancien export média/calque a été décrit, mais le format de tous les exports Snapchat n’est pas établi. L’importeur doit reconnaître ses formats pris en charge sans inventer les autres.\n\n## Portée\n\n- Définir un contrat d’adaptateur pour la découverte, les médias, les métadonnées et les diagnostics.\n- Documenter le format observé de fichiers UUID avec rôles main et overlay, puis les variantes effectivement examinées.\n- Préparer des exemples synthétiques pour plusieurs ZIP, conflits, dates absentes, extensions trompeuses et métadonnées partielles.\n- Lire HTML et JSON comme des données ; ne pas exécuter les scripts d’un export.\n\n## Critères d’acceptation\n\n- [ ] Chaque format activé dispose d’un exemple vérifié et d’une description de ses champs observés.\n- [ ] Un format inconnu produit un diagnostic exploitable et ne déclenche pas de parsing supposé compatible.\n- [ ] Aucun export personnel, identifiant de compte, URL signée ou média privé n’est ajouté au dépôt.\n- [ ] Ni le nom du ZIP ni le nombre de rubriques de l’index ne suffisent seuls à identifier une version ou un ensemble complet.\n\n## Validation pertinente\n\nExercer la détection sur les variantes synthétiques connues et sur un index inconnu ; vérifier qu’un document HTML contenant un script reste traité comme du texte.\n",
+      "github_issue_number": 2,
+      "github_url": "https://github.com/tomyrms/Memo/issues/2"
+    },
+    {
+      "id": "SD-003",
+      "title": "Importer plusieurs ZIP avec reprise et ajout progressif",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-001",
+        "SD-002"
+      ],
+      "body": "## Pourquoi\n\nUne seule archive peut ne contenir qu’une partie des médias et métadonnées d’un export. L’import doit raisonner sur toutes les archives sélectionnées, y compris celles ajoutées plus tard.\n\n## Portée\n\n- Sélectionner plusieurs ZIP, un dossier de ZIP ou un dossier déjà extrait.\n- Construire un inventaire commun et enregistrer la provenance de chaque fichier.\n- Gérer interruption, reprise, progression et erreurs de lecture sans charger tout l’export en mémoire.\n- Valider les chemins, les collisions et les tailles lors de la lecture ou extraction ; traiter les archives imbriquées uniquement lorsqu’un adaptateur les reconnaît.\n\n## Critères d’acceptation\n\n- [ ] L’ordre de sélection des ZIP ne modifie pas les associations finales pour un même ensemble de fichiers.\n- [ ] Une interruption puis une reprise ne perd pas les éléments déjà validés et ne les importe pas en double.\n- [ ] Les médias des conversations restent hors du périmètre Souvenirs par défaut.\n- [ ] Le bilan décrit les archives traitées ; sans manifeste faisant autorité, il n’affirme pas connaître la complétude de l’export Snapchat.\n\n## Validation pertinente\n\nImporter un lot synthétique où un média, son calque et son index sont répartis sur plusieurs ZIP ; interrompre puis reprendre une seule fois pour contrôler le risque de perte ou duplication. Ajouter des cas de ZIP illisible et de chemin sortant du répertoire cible.\n",
+      "github_issue_number": 3,
+      "github_url": "https://github.com/tomyrms/Memo/issues/3"
+    },
+    {
+      "id": "SD-004",
+      "title": "Associer les médias entre archives et rendre les réimports idempotents",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-003"
+      ],
+      "body": "## Pourquoi\n\nUn calque trouvé avant son média doit être conservé puis rapproché. Des fichiers identiques ou des identifiants homonymes ne prouvent pas que deux souvenirs logiques sont interchangeables.\n\n## Portée\n\n- Associer les rôles par identifiant dans un espace source défini, avec la provenance des archives.\n- Conserver les éléments en attente et les compléter lors d’imports ultérieurs.\n- Séparer déduplication des octets, souvenir logique et variantes de rendu.\n- Conserver les conflits de contenu ou d’identité au lieu d’écraser silencieusement une version.\n\n## Critères d’acceptation\n\n- [ ] Un média et un calque placés dans des ZIP différents sont associés dans leur espace source.\n- [ ] Le même lot réimporté ne crée pas de copie logique supplémentaire ; favoris, albums et corrections sont conservés.\n- [ ] Deux espaces sources portant le même identifiant ne sont pas fusionnés automatiquement.\n- [ ] Un média absent est signalé comme « non trouvé dans les archives importées » ; une variante identique en octets peut partager son stockage sans supprimer un souvenir distinct.\n\n## Validation pertinente\n\nUtiliser des exemples synthétiques couvrant arrivée tardive du média, arrivée tardive du calque, collision d’identifiants entre sources et fichiers identiques rattachés à deux souvenirs distincts. Ne pas supposer des identifiants stables entre exports sans preuve.\n",
+      "github_issue_number": 4,
+      "github_url": "https://github.com/tomyrms/Memo/issues/4"
+    },
+    {
+      "id": "SD-005",
+      "title": "Décoder les médias et afficher les calques avec la bonne orientation",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-002",
+        "SD-004"
+      ],
+      "body": "## Pourquoi\n\nLes rapports transmis décrivent des WebP portant une extension PNG ainsi que des vidéos avec rotation. L’inventaire ne permet pas de vérifier les signatures binaires ; ses dimensions paraissent déjà exprimées dans l’orientation d’affichage.\n\n## Portée\n\n- Reconnaître le format réel et valider le support JPEG, PNG, WebP, H.264 et HEVC avec les composants retenus.\n- Conserver séparément dimensions encodées, transformation d’affichage et dimensions affichées.\n- Composer les calques dans le repère affiché du média, avec une règle d’ajustement validée sur des paires représentatives.\n- Proposer une vue avec ou sans calque et conserver les sources ; ne pas réencoder les vidéos pour la simple consultation.\n\n## Critères d’acceptation\n\n- [ ] Un WebP synthétique nommé .png est reconnu par son contenu et correctement affiché.\n- [ ] L’orientation est appliquée exactement une fois, y compris lorsque les métadonnées retournent déjà une dimension normalisée.\n- [ ] Les calques de tailles différentes sont alignés selon une règle vérifiée ; un calque manquant ne bloque pas l’affichage du média.\n- [ ] Le support des codecs et le comportement de repli sont vérifiés sur Windows sans dépendance implicite à une extension préinstallée.\n\n## Validation pertinente\n\nComparer le rendu de quelques paires synthétiques portrait, paysage, rotation et dimensions de calque différentes, puis tester la lecture avec et sans audio. Les nombres et rendus décrits dans un rapport ne remplacent pas cette validation indépendante.\n",
+      "github_issue_number": 5,
+      "github_url": "https://github.com/tomyrms/Memo/issues/5"
+    },
+    {
+      "id": "SD-006",
+      "title": "Gérer les dates, leur provenance et les fuseaux horaires",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-002",
+        "SD-004"
+      ],
+      "body": "## Pourquoi\n\nUne date de création de conteneur peut être exploitable sans être une date de prise de vue prouvée. Le choix du fuseau peut déplacer un souvenir au jour précédent ou suivant et changer les Flashbacks.\n\n## Portée\n\n- Conserver valeur brute, source, précision et fiabilité des dates candidates ainsi que les corrections utilisateur.\n- Distinguer date d’index, EXIF, création du conteneur, export et système de fichiers.\n- Prévoir un fuseau d’affichage configurable et une règle explicite pour les dates sans fuseau ou limitées au jour.\n- Traiter les fichiers de profil, abonnements ou historique de localisation comme facultatifs ; ne pas les exiger pour importer les Souvenirs.\n\n## Critères d’acceptation\n\n- [ ] L’horodatage ZIP ou l’ordre des entrées ne devient jamais silencieusement une date de souvenir.\n- [ ] Une date creation_time conserve ce nom de source et n’est pas automatiquement présentée comme une prise de vue certaine.\n- [ ] Changer le fuseau actualise le jour de classement et les suggestions sans altérer l’instant source.\n- [ ] Une date absente reste inconnue ; une correction manuelle ou un index ultérieur peut enrichir le souvenir sans effacer sa provenance.\n\n## Validation pertinente\n\nContrôler des instants proches de minuit, un changement d’heure, une date sans fuseau, une date limitée au jour et des sources contradictoires. Vérifier que l’import fonctionne sans données générales du compte.\n",
+      "github_issue_number": 6,
+      "github_url": "https://github.com/tomyrms/Memo/issues/6"
+    },
+    {
+      "id": "SD-007",
+      "title": "Construire la galerie chronologique et les vues à compléter",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-004",
+        "SD-005",
+        "SD-006"
+      ],
+      "body": "## Pourquoi\n\nLa présence de dates manquantes ou d’éléments partiels ne doit pas rendre les médias disponibles difficiles à retrouver.\n\n## Portée\n\n- Créer une galerie virtualisée avec regroupement par année, mois et jour.\n- Prévoir des vues Date inconnue et Éléments à compléter, distinctes de la galerie datée.\n- Ajouter filtres photo/vidéo, recherche par date et panneau d’informations avec provenance.\n- Générer les miniatures en arrière-plan et conserver une interface utilisable pendant l’import.\n\n## Critères d’acceptation\n\n- [ ] Tout média disponible est consultable, y compris sans date ou sans calque.\n- [ ] Les éléments constitués uniquement d’un calque sont identifiés sans être présentés comme des photos complètes.\n- [ ] Les dates incertaines et les informations absentes sont expliquées sans exposer des détails techniques inutiles dans le parcours principal.\n- [ ] Une importation en cours n’empêche pas de naviguer dans les souvenirs déjà disponibles.\n\n## Validation pertinente\n\nVérifier les parcours avec une bibliothèque synthétique mixte : médias datés, non datés, en cours d’import et éléments en attente. Mesurer l’interactivité sur un corpus représentatif défini avant de fixer un objectif chiffré.\n",
+      "github_issue_number": 7,
+      "github_url": "https://github.com/tomyrms/Memo/issues/7"
+    },
+    {
+      "id": "SD-008",
+      "title": "Lire les souvenirs à la suite façon Story",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-005",
+        "SD-007"
+      ],
+      "body": "## Pourquoi\n\nLa lecture successive des photos et vidéos est une fonction centrale pour retrouver l’expérience des Souvenirs.\n\n## Portée\n\n- Ajouter progression, pause, précédent/suivant et navigation au clavier.\n- Respecter orientation, calques et pistes audio des médias.\n- Définir une durée configurable pour les photos et une politique claire de reprise de lecture.\n- Gérer les éléments indisponibles sans bloquer toute la sélection.\n\n## Critères d’acceptation\n\n- [ ] Une sélection mélangeant photos et vidéos peut être lue sans modifier les fichiers sources.\n- [ ] La progression et les commandes restent cohérentes lors d’une pause, d’un retour ou d’un saut.\n- [ ] Les commandes essentielles sont accessibles au clavier et disposent de libellés compréhensibles.\n- [ ] Les éléments non lisibles sont signalés et peuvent être passés sans interrompre la session.\n\n## Validation pertinente\n\nParcourir une sélection synthétique avec photo, vidéo sans audio, vidéo orientée, calque et média indisponible ; vérifier les transitions et la reprise.\n",
+      "github_issue_number": 8,
+      "github_url": "https://github.com/tomyrms/Memo/issues/8"
+    },
+    {
+      "id": "SD-009",
+      "title": "Ajouter Ce jour-là sur toutes les années disponibles",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-006",
+        "SD-007",
+        "SD-008"
+      ],
+      "body": "## Pourquoi\n\nLe rappel « il y a un an, jour pour jour » est explicitement prioritaire. Il dépend d’une définition stable du jour local et d’une gestion honnête des dates supposées.\n\n## Portée\n\n- Regrouper les souvenirs correspondant au même jour et mois des années précédentes.\n- Définir la participation des dates incertaines et permettre à l’utilisateur de contrôler cette politique.\n- Documenter le comportement du 29 février et le fuseau utilisé pour la sélection.\n- Ouvrir une année ou une sélection complète en lecture Story.\n\n## Critères d’acceptation\n\n- [ ] Les souvenirs sont classés par année et aucune date inconnue ne reçoit d’anniversaire artificiel.\n- [ ] L’effet des dates supposées et la couverture disponible sont compréhensibles pour l’utilisateur.\n- [ ] Le changement de fuseau entraîne un recalcul cohérent avec la galerie.\n- [ ] Un jour sans souvenir disponible présente un état vide utile et permet de parcourir la bibliothèque.\n\n## Validation pertinente\n\nVérifier le calcul sur des exemples couvrant plusieurs années, un passage de minuit UTC/local, le 29 février et une date corrigée manuellement. Éviter de figer des comptages de jours indépendamment du fuseau choisi.\n",
+      "github_issue_number": 9,
+      "github_url": "https://github.com/tomyrms/Memo/issues/9"
+    },
+    {
+      "id": "SD-010",
+      "title": "Télécharger les médias des exports contenant un index de liens",
+      "milestone": "M1",
+      "priority": "P1",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-002",
+        "SD-003",
+        "SD-004"
+      ],
+      "body": "## Pourquoi\n\nCertains parcours d’export nécessitent de récupérer les médias depuis un index. Cette capacité doit reposer sur un format réellement examiné et rester distincte de l’import de fichiers déjà présents.\n\n## Portée\n\n- Ajouter un adaptateur de téléchargement pour chaque structure d’index effectivement validée.\n- Gérer progression, reprise, limites de concurrence et erreurs de récupération.\n- Accepter un nouvel index pour réessayer les liens devenus inutilisables.\n- Conserver les secrets hors des journaux et ne pas demander les identifiants Snapchat dans l’application.\n\n## Critères d’acceptation\n\n- [ ] Aucun schéma HTML ou JSON supposé actuel n’est activé sans exemple vérifié.\n- [ ] Une erreur de lien ne bloque pas les médias déjà importés et le diagnostic distingue indisponibilité, expiration supposée et erreur réseau.\n- [ ] Le remplacement d’un index n’écrase ni fichiers sources, ni corrections, ni albums.\n- [ ] Les URL et redirections sont validées pour le téléchargement de médias ; les URL signées ne figurent pas en clair dans les rapports exportés.\n\n## Validation pertinente\n\nUtiliser un serveur local de test et des index synthétiques validés pour simuler reprise, erreur et redirection. Une première version limitée aux ZIP contenant les médias reste livrable si aucun autre format n’a encore été validé.\n",
+      "github_issue_number": 10,
+      "github_url": "https://github.com/tomyrms/Memo/issues/10"
+    },
+    {
+      "id": "SD-011",
+      "title": "Ajouter albums, favoris et exclusions des suggestions",
+      "milestone": "M1",
+      "priority": "P1",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-004",
+        "SD-007",
+        "SD-008",
+        "SD-009"
+      ],
+      "body": "## Pourquoi\n\nL’utilisateur doit pouvoir organiser ses souvenirs et choisir ceux qui réapparaissent dans les rappels sans supprimer les fichiers correspondants.\n\n## Portée\n\n- Créer, renommer et réordonner des albums dans le catalogue.\n- Ajouter favoris et lecture d’album façon Story.\n- Masquer des souvenirs ou des périodes des Flashbacks et récapitulatifs.\n- Préserver ces personnalisations à travers réimports, rapprochements et restaurations.\n\n## Critères d’acceptation\n\n- [ ] Les albums n’imposent pas de déplacer ou renommer les fichiers sources.\n- [ ] Les favoris et l’ordre d’un album sont conservés après réimport d’un lot.\n- [ ] Une exclusion retire le souvenir des suggestions tout en le laissant accessible dans la bibliothèque.\n- [ ] Les exclusions sont réversibles et leur portée est compréhensible.\n\n## Validation pertinente\n\nCréer un album, marquer un favori et masquer une période, puis ajouter une archive complémentaire et réimporter le lot ; vérifier la conservation des choix.\n",
+      "github_issue_number": 11,
+      "github_url": "https://github.com/tomyrms/Memo/issues/11"
+    },
+    {
+      "id": "SD-012",
+      "title": "Sauvegarder et restaurer une bibliothèque portable",
+      "milestone": "M1",
+      "priority": "P1",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-001",
+        "SD-004",
+        "SD-006",
+        "SD-011"
+      ],
+      "body": "## Pourquoi\n\nLa conservation locale doit permettre une restauration sur un autre PC sans perdre les médias, les associations ou les choix de l’utilisateur.\n\n## Portée\n\n- Sauvegarder catalogue, sources et personnalisations avec un bilan des éléments inclus.\n- Restaurer sans dépendre des chemins absolus de l’ancienne installation.\n- Exporter une sélection de médias et ses métadonnées utiles dans un format documenté.\n- Distinguer sauvegarde de bibliothèque, export des sources et export composé.\n\n## Critères d’acceptation\n\n- [ ] Une bibliothèque restaurée retrouve albums, favoris, dates corrigées et associations de calques.\n- [ ] Le bilan identifie les sources non disponibles et ne présente pas une copie partielle comme une sauvegarde complète.\n- [ ] L’export ne modifie pas les fichiers importés et les noms de sortie n’écrasent pas silencieusement des fichiers existants.\n- [ ] Le changement de disque ou de PC ne casse pas les références internes de la bibliothèque restaurée.\n\n## Validation pertinente\n\nEffectuer un aller-retour de sauvegarde/restauration avec une bibliothèque synthétique contenant deux sources, des éléments en attente et des corrections ; contrôler le contenu et les relations, pas seulement la présence de fichiers.\n",
+      "github_issue_number": 12,
+      "github_url": "https://github.com/tomyrms/Memo/issues/12"
+    },
+    {
+      "id": "SD-013",
+      "title": "Distribuer une première version Windows installable et accessible",
+      "milestone": "M1",
+      "priority": "P0",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-001",
+        "SD-002",
+        "SD-003",
+        "SD-004",
+        "SD-005",
+        "SD-006",
+        "SD-007",
+        "SD-008",
+        "SD-009",
+        "SD-011",
+        "SD-012"
+      ],
+      "body": "## Pourquoi\n\nLa première version doit pouvoir être installée et utilisée sur un PC Windows sans dépendre de l’environnement de développement.\n\n## Portée\n\n- Produire l’installateur et documenter les versions de Windows prises en charge.\n- Vérifier les dépendances multimédias distribuées, leurs licences et leur comportement sur une installation propre.\n- Contrôler les parcours principaux au clavier, les libellés accessibles et les préférences de mouvement.\n- Définir un processus de versionnement et de publication des builds sans données personnelles.\n\n## Critères d’acceptation\n\n- [ ] L’installation, le lancement et la désinstallation fonctionnent selon le comportement documenté ; les données utilisateur sont traitées explicitement.\n- [ ] Le parcours import multiZIP, galerie, Story, Ce jour-là et sauvegarde est validé sur Windows propre.\n- [ ] Les formats annoncés comme pris en charge sont lisibles sans dépendance préinstallée non documentée.\n- [ ] Aucun export personnel ou exemple identifiable ne figure dans le package, les journaux de build ou les artefacts publiés.\n\n## Validation pertinente\n\nEffectuer une validation représentative sur une installation propre et un parcours clavier complet. L’adaptateur de liens SD-010 n’est annoncé dans la version que s’il a été validé ; son absence de preuve ne bloque pas la distribution du support des fichiers locaux.\n",
+      "github_issue_number": 13,
+      "github_url": "https://github.com/tomyrms/Memo/issues/13"
+    },
+    {
+      "id": "SD-014",
+      "title": "Générer des récapitulatifs annuels, mensuels et saisonniers",
+      "milestone": "M2",
+      "priority": "P1",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-006",
+        "SD-008",
+        "SD-011"
+      ],
+      "body": "## Pourquoi\n\nLes récapitulatifs doivent faire redécouvrir une période et rester modifiables, même lorsque certaines dates ou certains médias manquent.\n\n## Portée\n\n- Proposer une sélection répartie sur la période avec prise en compte des favoris et limitation des répétitions.\n- Permettre ajout, retrait et réordonnancement avant lecture.\n- Appliquer exclusions et politique de dates.\n- Conserver la sélection pour la retrouver et la modifier plus tard.\n\n## Critères d’acceptation\n\n- [ ] La sélection couvre la période selon une règle documentée et ne prétend pas représenter les médias non datés ou absents.\n- [ ] Chaque proposition peut être corrigée sans altérer les souvenirs sources.\n- [ ] Les exclusions sont respectées lors de la création et d’une régénération.\n- [ ] Un récapitulatif enregistré reste disponible et peut être relu en Story.\n\n## Validation pertinente\n\nComparer des périodes abondantes, peu fournies et partiellement datées ; vérifier sélection modifiable, conservation et exclusions.\n",
+      "github_issue_number": 14,
+      "github_url": "https://github.com/tomyrms/Memo/issues/14"
+    },
+    {
+      "id": "SD-015",
+      "title": "Proposer des rappels Windows facultatifs",
+      "milestone": "M2",
+      "priority": "P1",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-009",
+        "SD-011",
+        "SD-013"
+      ],
+      "body": "## Pourquoi\n\nLes rappels permettent de découvrir les Flashbacks sans ouvrir régulièrement l’application, mais doivent rester configurables et discrets.\n\n## Portée\n\n- Prévoir activation volontaire, heure configurable et désactivation accessible.\n- Définir le comportement lorsque la fenêtre est fermée, que Windows a suspendu la tâche ou que l’appareil est hors ligne.\n- Éviter les notifications répétées et respecter les exclusions.\n- Ouvrir la sélection concernée à partir de la notification.\n\n## Critères d’acceptation\n\n- [ ] Aucune notification récurrente n’est activée sans choix de l’utilisateur.\n- [ ] L’interface explique ce qui se passe lorsque l’application est fermée, selon la solution réellement retenue.\n- [ ] Une option discrète masque le contenu des médias dans les notifications.\n- [ ] Un rappel déjà traité n’est pas répété après redémarrage et les souvenirs exclus n’y apparaissent pas.\n\n## Validation pertinente\n\nVérifier activation/désactivation, redémarrage, sortie de veille, changement de fuseau et accès depuis une notification sur Windows.\n",
+      "github_issue_number": 15,
+      "github_url": "https://github.com/tomyrms/Memo/issues/15"
+    },
+    {
+      "id": "SD-016",
+      "title": "Suggérer des événements et afficher les lieux disponibles",
+      "milestone": "M2",
+      "priority": "P2",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-006",
+        "SD-007",
+        "SD-011"
+      ],
+      "body": "## Pourquoi\n\nDes groupes temporels et des lieux peuvent faciliter la navigation, à condition de distinguer données directement liées aux souvenirs et suggestions.\n\n## Portée\n\n- Proposer des collections temporelles que l’utilisateur peut valider, renommer ou corriger.\n- Exploiter les coordonnées directement associées à un média ou ajoutées manuellement.\n- Afficher une carte uniquement pour les souvenirs disposant d’une localisation exploitable.\n- Documenter l’éventuelle dépendance du fond de carte au réseau.\n\n## Critères d’acceptation\n\n- [ ] Les événements suggérés sont identifiés comme propositions et restent modifiables.\n- [ ] Les coordonnées de connexion ou l’historique général du compte ne sont jamais attribués silencieusement à un souvenir.\n- [ ] Un souvenir sans lieu reste pleinement utilisable et aucune carte artificiellement complète n’est affichée.\n- [ ] Une chronologie proche ou un UUID voisin ne déclenche pas de fusion automatique de séquences vidéo.\n\n## Validation pertinente\n\nUtiliser des médias avec dates proches mais événements distincts, coordonnées connues et coordonnées absentes ; vérifier que les suggestions ne modifient pas les sources.\n",
+      "github_issue_number": 16,
+      "github_url": "https://github.com/tomyrms/Memo/issues/16"
+    },
+    {
+      "id": "SD-017",
+      "title": "Exporter une Story ou un récapitulatif en vidéo",
+      "milestone": "M2",
+      "priority": "P2",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-005",
+        "SD-008",
+        "SD-014"
+      ],
+      "body": "## Pourquoi\n\nUne sélection de souvenirs doit pouvoir être conservée dans un fichier vidéo partageable sans dépendre du lecteur de l’application.\n\n## Portée\n\n- Prévisualiser ordre, durées et format d’image avant génération.\n- Respecter orientation, calques et audio selon les choix de rendu.\n- Gérer progression, annulation et espace disque insuffisant.\n- Conserver la sélection permettant de régénérer le fichier.\n\n## Critères d’acceptation\n\n- [ ] Le fichier de sortie correspond à la prévisualisation sur les cas de rendu pris en charge.\n- [ ] Les sources et leurs métadonnées restent inchangées.\n- [ ] Une génération interrompue n’est pas présentée comme réussie et les fichiers temporaires sont gérés.\n- [ ] La sélection source reste disponible pour une nouvelle génération ou une correction.\n\n## Validation pertinente\n\nGénérer puis relire une sélection synthétique mélangeant photo, vidéo orientée, calque et vidéo sans audio ; vérifier également une interruption et une insuffisance d’espace simulée.\n",
+      "github_issue_number": 17,
+      "github_url": "https://github.com/tomyrms/Memo/issues/17"
+    },
+    {
+      "id": "SD-018",
+      "title": "Ajouter OCR et recherche visuelle locale facultative",
+      "milestone": "M3",
+      "priority": "P2",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-005",
+        "SD-007",
+        "SD-011"
+      ],
+      "body": "## Pourquoi\n\nLes catégories et textes de Snapchat ne sont pas garantis dans les exports. Une recherche enrichie peut les remplacer par une nouvelle analyse locale, clairement identifiée.\n\n## Portée\n\n- Proposer séparément reconnaissance de texte et catégories visuelles.\n- Indexer les médias et calques pertinents en arrière-plan.\n- Permettre correction des résultats, exclusion de médias et suppression de l’index.\n- Documenter les modèles, licences, ressources et éventuels téléchargements initiaux nécessaires.\n\n## Critères d’acceptation\n\n- [ ] Les traitements sont activables séparément et ne transfèrent pas les médias vers un service distant.\n- [ ] Un texte reconnu ou une catégorie suggérée reste distinct d’une métadonnée importée.\n- [ ] L’utilisateur peut interrompre l’analyse et supprimer les données dérivées sans supprimer les médias.\n- [ ] Les exclusions et corrections sont respectées lors d’une réindexation.\n\n## Validation pertinente\n\nÉvaluer un petit corpus synthétique ou autorisé couvrant textes sur calques, images sans texte et catégories ambiguës ; documenter les limites et contrôler l’absence d’envoi de médias.\n",
+      "github_issue_number": 18,
+      "github_url": "https://github.com/tomyrms/Memo/issues/18"
+    },
+    {
+      "id": "SD-019",
+      "title": "Regrouper les souvenirs par personnes de manière facultative",
+      "milestone": "M3",
+      "priority": "P2",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-007",
+        "SD-011"
+      ],
+      "body": "## Pourquoi\n\nLe regroupement par visages peut aider à retrouver des souvenirs, mais ne constitue ni une identité certaine ni une catégorie importée de Snapchat.\n\n## Portée\n\n- Prévoir activation volontaire et traitement local.\n- Créer des groupes de visages similaires auxquels l’utilisateur peut attribuer lui-même un nom.\n- Permettre fusion, séparation et correction des groupes.\n- Prévoir désactivation et suppression des données dérivées.\n\n## Critères d’acceptation\n\n- [ ] Aucun nom n’est attribué automatiquement depuis la liste d’amis ou les données générales du compte.\n- [ ] Les groupes sont présentés comme susceptibles d’erreurs et peuvent être corrigés.\n- [ ] La désactivation peut supprimer groupes, étiquettes et représentations calculées sans effacer les souvenirs.\n- [ ] L’analyse n’envoie pas les médias ou représentations de visages vers un service distant.\n\n## Validation pertinente\n\nValider activation, correction et suppression sur des images synthétiques ou explicitement autorisées ; contrôler séparément la persistance des médias et l’effacement des données dérivées.\n",
+      "github_issue_number": 19,
+      "github_url": "https://github.com/tomyrms/Memo/issues/19"
+    },
+    {
+      "id": "SD-020",
+      "title": "Créer l’accueil À redécouvrir et le mode Surprends-moi",
+      "milestone": "M2",
+      "priority": "P1",
+      "labels": [
+        "enhancement"
+      ],
+      "depends_on": [
+        "SD-009",
+        "SD-011",
+        "SD-014"
+      ],
+      "body": "## Pourquoi\n\nL’application doit donner envie de revenir consulter ses souvenirs. Un accueil visuel réunit les rappels du jour, les récapitulatifs et une sélection variée, sans multiplier les notifications.\n\n## Portée\n\n- Créer l’accueil « À redécouvrir » avec des cartes de souvenirs du jour, des années précédentes et des récapitulatifs conservés.\n- Ajouter « Surprends-moi » pour retrouver une ancienne journée ou une courte sélection de souvenirs disponibles.\n- Diversifier les périodes proposées et mémoriser localement les propositions récentes afin de limiter les répétitions.\n- Prévoir des états vides utiles, des miniatures chargées progressivement et une navigation adaptée à Windows.\n\n## Critères d’acceptation\n\n- [ ] Les cartes ouvrent la bonne sélection en Story ; elles respectent les dates, favoris et exclusions.\n- [ ] Le mode Surprends-moi ne propose ni média indisponible ni élément masqué et évite les répétitions immédiates lorsqu’il existe des alternatives.\n- [ ] Les médias non datés peuvent participer à une sélection générique explicitement sans date, jamais à une fausse journée anniversaire.\n- [ ] Les sélections restent utilisables hors ligne et sont actualisées après l’ajout d’autres archives.\n- [ ] L’accueil reste lisible avec peu de contenu ; clavier, lecteur d’écran et réduction des animations sont pris en compte.\n\n## Validation pertinente\n\nVérifier les parcours avec une bibliothèque vide, une seule journée, plusieurs années et des éléments masqués. Contrôler la variation des propositions sur un corpus synthétique et la cohérence des liens vers le lecteur Story.\n",
+      "github_issue_number": 20,
+      "github_url": "https://github.com/tomyrms/Memo/issues/20"
+    }
+  ],
+  "repository": "tomyrms/Memo"
+}

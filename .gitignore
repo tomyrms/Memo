@@ -1,0 +1,28 @@
+# Build et outils
+**/bin/
+**/obj/
+.vs/
+.idea/
+TestResults/
+artifacts/
+
+# Données personnelles locales et résultats de traitement
+/imports/
+/private/
+/libraries/
+/exports/
+/cache/
+/logs/
+*.zip
+*.7z
+*.db
+*.db-shm
+*.db-wal
+*.log
+.env
+.env.*
+
+# Système
+.DS_Store
+Thumbs.db
+desktop.ini
