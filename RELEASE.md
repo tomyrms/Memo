@@ -55,6 +55,7 @@ Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 - Installateur 0.1.0 reconstruit après la passe de correction : installation silencieuse dans `%LOCALAPPDATA%\Programs\Memo`, démarrage réel de la version installée sur la bibliothèque de 838 souvenirs, désinstallation silencieuse sans résidu du dossier d'installation.
 - Publication vérifiée : `Memo.pri` et 17 fichiers `.xbf` présents avant compilation de l'installateur.
 - Dialogue « Choisir un autre disque » vérifié à l'écran : liste des disques avec espace libre, nom de dossier, aperçu du chemin et création d'une bibliothèque sur `X:`.
+- Écran Imports revu à 1040×1800 et 1320×860 : le bouton de choix du disque reste entièrement visible.
 - Captures d'écran des écrans principaux en 1320×860 et 1040×1800.
 
 ## Artefacts
