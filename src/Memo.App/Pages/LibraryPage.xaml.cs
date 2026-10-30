@@ -1,3 +1,4 @@
+using Memo.App.Controls;
 using Memo.App.Services;
 using Memo.App.Ui;
 using Memo.Core;
@@ -19,6 +20,8 @@ public sealed partial class LibraryPage : Page
     private List<MemoryCard> _filtered = new();
     private CancellationTokenSource? _searchCts;
     private int _searchGeneration;
+    private List<MemoryGroup> _groups = new();
+    private readonly Dictionary<long, int> _filteredIndex = new();
 
     public LibraryPage()
     {
@@ -123,6 +126,15 @@ public sealed partial class LibraryPage : Page
     private void ApplyFiltered(IReadOnlyList<MemoryCard> filtered)
     {
         _filtered = filtered.ToList();
+        var selectedIds = _selectionMode
+            ? Grid.SelectedItems.OfType<MemoryCard>().Select(c => c.Id).ToHashSet()
+            : new HashSet<long>();
+
+        _filteredIndex.Clear();
+        for (var i = 0; i < _filtered.Count; i++)
+        {
+            _filteredIndex[_filtered[i].Id] = i;
+        }
 
         var groups = _filtered
             .Where(c => c.LocalDate is not null)
@@ -137,10 +149,28 @@ public sealed partial class LibraryPage : Page
             groups.Add(new MemoryGroup("Date inconnue", undated));
         }
 
+        _groups = groups;
+        // La source est remplacée : on repart d'une sélection vide avant de
+        // réappliquer les identifiants conservés.
+        if (_selectionMode)
+        {
+            Grid.SelectedItems.Clear();
+        }
         var cvs = new CollectionViewSource { IsSourceGrouped = true, Source = groups };
         Grid.ItemsSource = cvs.View;
 
         var total = AppState.Current.Cards.Count;
+        if (selectedIds.Count > 0)
+        {
+            foreach (var card in _filtered)
+            {
+                if (selectedIds.Contains(card.Id))
+                {
+                    Grid.SelectedItems.Add(card);
+                }
+            }
+        }
+
         CountLabel.Text = _filtered.Count == total
             ? $"{_filtered.Count} souvenir(s)"
             : $"{_filtered.Count} sur {total} souvenirs";
@@ -299,7 +329,9 @@ public sealed partial class LibraryPage : Page
         {
             if (source is FrameworkElement { DataContext: MemoryCard card })
             {
-                return card;
+                // Le DataContext d'un conteneur virtualisé peut dater d'avant
+                // une mise à jour incrémentale : on relit l'état courant.
+                return AppState.Current.CardById(card.Id) ?? card;
             }
             source = VisualTreeHelper.GetParent(source);
         }
@@ -313,37 +345,174 @@ public sealed partial class LibraryPage : Page
         => _ = ToggleExcludedAsync(Selected());
 
     private List<MemoryCard> Selected()
-        => Grid.SelectedItems.OfType<MemoryCard>().ToList();
+        => Grid.SelectedItems.OfType<MemoryCard>()
+            .Select(c => AppState.Current.CardById(c.Id) ?? c)
+            .ToList();
 
     private async Task ToggleFavoriteAsync(IReadOnlyList<MemoryCard> cards)
     {
-        foreach (var card in cards)
+        if (cards.Count == 0)
         {
-            await AppState.Current.SetFavoriteAsync(card.Id, !card.IsFavorite);
+            return;
         }
-        Refresh();
+
+        // Une seule écriture par valeur cible, puis une seule mise à jour d'UI,
+        // au lieu d'un aller-retour et d'un rechargement complet par souvenir.
+        var toAdd = cards.Where(c => !c.IsFavorite).Select(c => c.Id).ToList();
+        var toRemove = cards.Where(c => c.IsFavorite).Select(c => c.Id).ToList();
+        var changed = new List<long>(cards.Count);
+
+        try
+        {
+            if (toAdd.Count > 0)
+            {
+                await AppState.Current.SetFavoritesAsync(toAdd, true);
+                changed.AddRange(toAdd);
+            }
+            if (toRemove.Count > 0)
+            {
+                await AppState.Current.SetFavoritesAsync(toRemove, false);
+                changed.AddRange(toRemove);
+            }
+        }
+        finally
+        {
+            // Même en cas d'échec partiel, la vue reflète ce qui a été écrit.
+            UpdateCards(changed);
+        }
     }
 
     private async Task ToggleExcludedAsync(IReadOnlyList<MemoryCard> cards)
     {
-        foreach (var card in cards)
+        if (cards.Count == 0)
         {
-            await AppState.Current.SetExcludedAsync(card.Id, !card.IsExcluded);
+            return;
         }
-        Refresh();
+
+        var toExclude = cards.Where(c => !c.IsExcluded).Select(c => c.Id).ToList();
+        var toRestore = cards.Where(c => c.IsExcluded).Select(c => c.Id).ToList();
+        var changed = new List<long>(cards.Count);
+
+        try
+        {
+            if (toExclude.Count > 0)
+            {
+                await AppState.Current.SetExclusionsAsync(toExclude, true);
+                changed.AddRange(toExclude);
+            }
+            if (toRestore.Count > 0)
+            {
+                await AppState.Current.SetExclusionsAsync(toRestore, false);
+                changed.AddRange(toRestore);
+            }
+        }
+        finally
+        {
+            UpdateCards(changed);
+        }
     }
 
-    private static void Replace(MemoryCard updated)
+    /// <summary>
+    /// Répercute une mutation incrémentale sur la vue sans reconstruire la
+    /// grille : les tuiles visibles sont mises à jour, les autres le seront
+    /// lors de la réalisation de leur conteneur.
+    /// </summary>
+    private void UpdateCards(IReadOnlyList<long> memoryIds)
     {
-        var list = AppState.Current.Cards;
-        for (var i = 0; i < list.Count; i++)
+        if (memoryIds.Count == 0)
         {
-            if (list[i].Id == updated.Id)
+            return;
+        }
+
+        var updated = new List<(MemoryCard Old, MemoryCard New, GridViewItem? Container)>();
+        foreach (var id in memoryIds)
+        {
+            if (!_filteredIndex.TryGetValue(id, out var index) || index < 0 || index >= _filtered.Count)
             {
-                list[i] = updated;
+                continue;
+            }
+
+            var old = _filtered[index];
+            var fresh = AppState.Current.CardById(id);
+            if (fresh is null || ReferenceEquals(old, fresh))
+            {
+                continue;
+            }
+
+            // Le conteneur est résolu avant le remplacement : après, l'ancien
+            // record n'appartient plus à la source de la grille.
+            var container = Grid.ContainerFromItem(old) as GridViewItem;
+            _filtered[index] = fresh;
+            ReplaceInGroups(old, fresh);
+            updated.Add((old, fresh, container));
+        }
+
+        foreach (var (old, fresh, container) in updated)
+        {
+            UpdateVisibleTile(container, fresh);
+            UpdateSelectionEntry(old, fresh);
+        }
+        UpdateSelectionBar();
+    }
+
+    private void ReplaceInGroups(MemoryCard oldCard, MemoryCard newCard)
+    {
+        foreach (var group in _groups)
+        {
+            var index = group.IndexOf(oldCard);
+            if (index >= 0)
+            {
+                group[index] = newCard;
                 return;
             }
         }
+    }
+
+    private static void UpdateVisibleTile(GridViewItem? container, MemoryCard newCard)
+    {
+        if (container is null)
+        {
+            return;
+        }
+
+        var tile = FindDescendant<MemoryTile>(container);
+        if (tile is not null)
+        {
+            tile.Card = newCard;
+        }
+    }
+
+    private void UpdateSelectionEntry(MemoryCard oldCard, MemoryCard newCard)
+    {
+        if (!_selectionMode)
+        {
+            return;
+        }
+
+        var index = Grid.SelectedItems.IndexOf(oldCard);
+        if (index >= 0 && Grid.SelectedItems.Remove(oldCard))
+        {
+            Grid.SelectedItems.Add(newCard);
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+            {
+                return match;
+            }
+            var nested = FindDescendant<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+        return null;
     }
 
     private async void OnAddToAlbum(object sender, RoutedEventArgs e)

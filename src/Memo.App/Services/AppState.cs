@@ -33,26 +33,39 @@ public sealed class AppState
     private readonly Dictionary<long, string> _demoMedia = new();
     private readonly Dictionary<long, string> _demoOverlays = new();
 
+    // Index id -> position dans Cards, entretenu avec la collection pour que
+    // les mises à jour incrémentales restent en O(1) par souvenir.
+    private readonly Dictionary<long, int> _cardIndex = new();
+
+    // Sérialise les changements de bibliothèque (ouverture, création, fermeture)
+    // afin que deux bascules concurrentes ne puissent pas s'entrelacer.
+    private readonly SemaphoreSlim _libraryGate = new(1, 1);
+
+    // Jeton de génération : toute opération asynchrone capture la bibliothèque
+    // et cette valeur, puis vérifie qu'elles sont toujours courantes avant
+    // d'écrire dans l'état. Une opération lancée sur l'ancienne bibliothèque
+    // ne peut donc pas polluer la nouvelle.
+    private int _libraryEpoch;
+    private int _reloadVersion;
+
     private AppState() { }
 
     public void LoadDemo()
     {
+        // Invalide les opérations encore en vol sur une éventuelle bibliothèque.
+        _libraryEpoch++;
         Library = null;
         LibraryPath = null;
         LibraryName = "Bibliothèque de démonstration";
         Spaces = Array.Empty<SpaceInfo>();
         CurrentSpaceId = 0;
-        Cards.Clear();
-        Albums.Clear();
-        Recaps.Clear();
         _demoThumbnails.Clear();
         _demoMedia.Clear();
         _demoOverlays.Clear();
 
-        foreach (var card in DemoData.CreateCards())
-        {
-            Cards.Add(card);
-        }
+        ReplaceAllCards(DemoData.CreateCards());
+        Reset(Albums, Array.Empty<CollectionInfo>());
+        Reset(Recaps, Array.Empty<CollectionInfo>());
         DemoData.FillAssets(_demoThumbnails, _demoMedia, _demoOverlays);
         foreach (var album in DemoData.CreateAlbums())
         {
@@ -62,75 +75,95 @@ public sealed class AppState
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public async Task OpenLibraryAsync(string rootPath, CancellationToken ct = default)
-    {
-        var library = await MemoLibrary.OpenAsync(rootPath, ct);
-        Library = library;
-        LibraryPath = library.Info.RootPath;
-        LibraryName = library.Info.Name;
-        Settings = library.Settings.Current;
-        RememberLibrary(library.Info.RootPath);
-        await ReloadAsync(ct);
-    }
+    public Task OpenLibraryAsync(string rootPath, CancellationToken ct = default)
+        => SwitchLibraryAsync(token => MemoLibrary.OpenAsync(rootPath, token), ct);
 
-    public async Task CreateLibraryAsync(string rootPath, string name, CancellationToken ct = default)
+    public Task CreateLibraryAsync(string rootPath, string name, CancellationToken ct = default)
     {
-        var library = await MemoLibrary.CreateAsync(rootPath, name, Settings.TimeZoneId, ct);
-        Library = library;
-        LibraryPath = library.Info.RootPath;
-        LibraryName = library.Info.Name;
-        RememberLibrary(library.Info.RootPath);
-        await ReloadAsync(ct);
+        // Le fuseau courant sert de valeur initiale au nouveau catalogue.
+        var timeZoneId = Settings.TimeZoneId;
+        return SwitchLibraryAsync(token => MemoLibrary.CreateAsync(rootPath, name, timeZoneId, token), ct);
     }
 
     public async Task CloseLibraryAsync()
     {
-        if (Library is not null)
+        await _libraryGate.WaitAsync();
+        try
         {
-            await Library.DisposeAsync();
+            var previous = Library;
+            _libraryEpoch++;
+            Library = null;
+            if (previous is not null)
+            {
+                await previous.DisposeAsync();
+            }
+            LoadDemo();
         }
-        LoadDemo();
+        finally
+        {
+            _libraryGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Bascule atomique : la nouvelle bibliothèque est ouverte et son contenu
+    /// est chargé avant de remplacer l'ancienne. En cas d'échec, l'état courant
+    /// (et le chemin mémorisé) reste strictement inchangé.
+    /// </summary>
+    private async Task SwitchLibraryAsync(Func<CancellationToken, Task<MemoLibrary>> open, CancellationToken ct)
+    {
+        await _libraryGate.WaitAsync(ct);
+        MemoLibrary? candidate = null;
+        try
+        {
+            candidate = await open(ct);
+
+            // Charge tout avant la bascule : Cards/Albums/Recaps ne sont jamais
+            // vidés pour une bibliothèque qui ne s'ouvre pas entièrement.
+            var snapshot = await LoadSnapshotAsync(candidate, 0, ct);
+
+            var previous = Library;
+            ApplyLibrary(candidate, snapshot);
+            candidate = null; // l'instance appartient désormais à AppState
+
+            // Dernière bibliothèque mémorisée uniquement après succès complet.
+            RememberLibrary(LibraryPath!);
+
+            if (previous is not null)
+            {
+                await previous.DisposeAsync();
+            }
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        finally
+        {
+            if (candidate is not null)
+            {
+                await candidate.DisposeAsync();
+            }
+            _libraryGate.Release();
+        }
     }
 
     public async Task ReloadAsync(CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             return;
         }
 
-        Spaces = await Library.Catalog.GetSpacesAsync(ct);
-        if (Spaces.Count == 0)
+        var epoch = _libraryEpoch;
+        // Un rechargement plus récent remplace celui-ci ; le résultat obsolète
+        // n'est jamais appliqué.
+        var version = ++_reloadVersion;
+        var snapshot = await LoadSnapshotAsync(library, CurrentSpaceId, ct);
+        if (!IsCurrent(library, epoch) || version != _reloadVersion)
         {
-            var space = await Library.Catalog.CreateSpaceAsync("Mon export", null, ct);
-            Spaces = new[] { space };
-        }
-        if (CurrentSpaceId == 0 || Spaces.All(s => s.Id != CurrentSpaceId))
-        {
-            CurrentSpaceId = Spaces[0].Id;
-        }
-
-        var cards = await Library.Catalog.QueryAsync(
-            new MemoryQuery(IncludeExcluded: true, IncludeUndated: true, Limit: int.MaxValue), ct);
-        Cards.Clear();
-        foreach (var card in cards)
-        {
-            Cards.Add(card);
+            return;
         }
 
-        Albums.Clear();
-        foreach (var album in await Library.Catalog.GetCollectionsAsync(CollectionKind.Album, ct))
-        {
-            Albums.Add(album);
-        }
-
-        Recaps.Clear();
-        foreach (var recap in await Library.Catalog.GetCollectionsAsync(CollectionKind.Recap, ct))
-        {
-            Recaps.Add(recap);
-        }
-
-        Settings = Library.Settings.Current;
+        ApplySnapshot(snapshot);
         LibraryChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -140,16 +173,25 @@ public sealed class AppState
         IProgress<ImportProgress>? progress,
         CancellationToken ct = default)
     {
-        if (Library is null)
-        {
-            throw new InvalidOperationException("Aucune bibliothèque n'est ouverte.");
-        }
+        var library = Library ?? throw new InvalidOperationException("Aucune bibliothèque n'est ouverte.");
+        var epoch = _libraryEpoch;
 
-        var result = await Library.Import.RunAsync(new ImportRequest(spaceId, paths), progress, ct);
+        var result = await library.Import.RunAsync(new ImportRequest(spaceId, paths), progress, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            // L'import s'est terminé après un changement de bibliothèque :
+            // rien n'est appliqué à la nouvelle.
+            return result;
+        }
 
         // Les médias sont visibles immédiatement ; les miniatures se préparent
         // ensuite sans bloquer la consultation.
         await ReloadAsync(ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return result;
+        }
+
         progress?.Report(new ImportProgress(
             ImportPhase.Analyzing,
             "Préparation des miniatures",
@@ -158,7 +200,6 @@ public sealed class AppState
             null,
             result.Counters));
         await GenerateMissingThumbnailsAsync(progress, result.Counters, ct);
-        await ReloadAsync(ct);
         return result;
     }
 
@@ -167,29 +208,42 @@ public sealed class AppState
         ImportCounters? counters = null,
         CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             return;
         }
 
-        var cards = await Library.Catalog.QueryAsync(
+        var epoch = _libraryEpoch;
+        var cards = await library.Catalog.QueryAsync(
             new MemoryQuery(IncludeExcluded: true, IncludeUndated: true, Limit: int.MaxValue), ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
         var missing = cards
             .Where(c => !c.HasThumbnail && c.MainAssetId is long)
             .ToList();
         var done = 0;
-        var thumbsDirectory = Path.Combine(Library.Info.RootPath, "derived", "thumbs");
+        var thumbsDirectory = Path.Combine(library.Info.RootPath, "derived", "thumbs");
         Directory.CreateDirectory(thumbsDirectory);
 
         foreach (var card in missing)
         {
             ct.ThrowIfCancellationRequested();
+            // Une bascule de bibliothèque interrompt le travail restant : les
+            // miniatures de l'ancienne bibliothèque n'ont plus à être produites.
+            if (!IsCurrent(library, epoch))
+            {
+                return;
+            }
             if (card.HasThumbnail || card.MainAssetId is not long assetId)
             {
                 continue;
             }
 
-            var source = Library.Catalog.GetAssetPath(assetId);
+            var source = library.Catalog.GetAssetPath(assetId);
             if (!File.Exists(source))
             {
                 continue;
@@ -200,9 +254,22 @@ public sealed class AppState
             var ok = await Task.Run(() => kind == MediaKind.Video
                 ? ThumbnailService.CreateVideoThumbnail(source, destination)
                 : ThumbnailService.CreateImageThumbnail(source, destination), ct);
+            if (!IsCurrent(library, epoch))
+            {
+                return;
+            }
+
             if (ok)
             {
-                await Library.Catalog.SetThumbnailAsync(card.Id, $"derived/thumbs/{card.Id}.jpg", ct);
+                await library.Catalog.SetThumbnailAsync(card.Id, $"derived/thumbs/{card.Id}.jpg", ct);
+                if (!IsCurrent(library, epoch))
+                {
+                    return;
+                }
+
+                // La carte est mise à jour sur place plutôt que de recharger
+                // toute la collection après la génération des aperçus.
+                ReplaceCard(card.Id, current => current with { HasThumbnail = true });
             }
 
             done++;
@@ -216,65 +283,141 @@ public sealed class AppState
         }
     }
 
-    public async Task SetFavoriteAsync(long memoryId, bool value, CancellationToken ct = default)
+    /// <summary>Applique un favori à plusieurs souvenirs en une seule écriture.</summary>
+    public async Task SetFavoritesAsync(IReadOnlyList<long> memoryIds, bool value, CancellationToken ct = default)
     {
-        if (Library is null)
+        if (memoryIds.Count == 0)
         {
-            Replace(c => c.Id == memoryId, c => c with { IsFavorite = value });
             return;
         }
-        await Library.Catalog.SetFavoriteAsync(new[] { memoryId }, value, ct);
-        await ReloadAsync(ct);
+
+        var ids = memoryIds.Distinct().ToHashSet();
+        var library = Library;
+        if (library is null)
+        {
+            Replace(c => ids.Contains(c.Id), c => c with { IsFavorite = value });
+            return;
+        }
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.SetFavoriteAsync(ids.ToList(), value, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+        Replace(c => ids.Contains(c.Id), c => c with { IsFavorite = value });
     }
 
-    public async Task SetExcludedAsync(long memoryId, bool value, CancellationToken ct = default)
+    public Task SetFavoriteAsync(long memoryId, bool value, CancellationToken ct = default)
+        => SetFavoritesAsync(new[] { memoryId }, value, ct);
+
+    /// <summary>Applique une exclusion à plusieurs souvenirs en une seule écriture.</summary>
+    public async Task SetExclusionsAsync(IReadOnlyList<long> memoryIds, bool value, CancellationToken ct = default)
     {
-        if (Library is null)
+        if (memoryIds.Count == 0)
         {
-            Replace(c => c.Id == memoryId, c => c with { IsExcluded = value });
             return;
         }
-        await Library.Catalog.SetExcludedAsync(new[] { memoryId }, value, ct);
-        await ReloadAsync(ct);
+
+        var ids = memoryIds.Distinct().ToHashSet();
+        var library = Library;
+        if (library is null)
+        {
+            Replace(c => ids.Contains(c.Id), c => c with { IsExcluded = value });
+            return;
+        }
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.SetExcludedAsync(ids.ToList(), value, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+        Replace(c => ids.Contains(c.Id), c => c with { IsExcluded = value });
     }
+
+    public Task SetExcludedAsync(long memoryId, bool value, CancellationToken ct = default)
+        => SetExclusionsAsync(new[] { memoryId }, value, ct);
 
     public async Task SetDateOverrideAsync(long memoryId, DateOnly? date, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             Replace(c => c.Id == memoryId, c => c with { LocalDate = date, DateSource = date is null ? DateSource.Unknown : DateSource.User });
             return;
         }
-        await Library.Catalog.SetDateOverrideAsync(memoryId, date, DatePrecision.Day, null, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.SetDateOverrideAsync(memoryId, date, DatePrecision.Day, null, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        // Effacer une correction restaure la date déduite des métadonnées :
+        // relire cette seule carte évite de recharger toute la collection.
+        await RefreshCardAsync(
+            library,
+            epoch,
+            memoryId,
+            current => current with { LocalDate = date, DateSource = date is null ? DateSource.Unknown : DateSource.User },
+            ct);
+
+        // Les dates de couverture d'un album peuvent avoir changé.
+        if (IsCurrent(library, epoch))
+        {
+            await RefreshCollectionsAsync(library, epoch, ct);
+        }
     }
 
     public async Task SetLocationAsync(long memoryId, double? lat, double? lon, string? label, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             Replace(c => c.Id == memoryId, c => c with { Latitude = lat, Longitude = lon, LocationLabel = label });
             return;
         }
-        await Library.Catalog.SetLocationAsync(memoryId, lat, lon, label, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.SetLocationAsync(memoryId, lat, lon, label, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        await RefreshCardAsync(
+            library,
+            epoch,
+            memoryId,
+            current => current with { Latitude = lat, Longitude = lon, LocationLabel = label },
+            ct);
     }
 
     public async Task CreateAlbumAsync(string name, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             var id = Albums.Count == 0 ? 1 : Albums.Max(a => a.Id) + 1;
             Albums.Add(new CollectionInfo(id, name, CollectionKind.Album, DateTimeOffset.Now, 0, null, null, null));
             return;
         }
-        await Library.Catalog.CreateCollectionAsync(name, CollectionKind.Album, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        var album = await library.Catalog.CreateCollectionAsync(name, CollectionKind.Album, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+        InsertByName(Albums, album);
     }
 
     public async Task RenameAlbumAsync(long albumId, string name, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             for (var i = 0; i < Albums.Count; i++)
             {
@@ -285,13 +428,26 @@ public sealed class AppState
             }
             return;
         }
-        await Library.Catalog.RenameCollectionAsync(albumId, name, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.RenameCollectionAsync(albumId, name, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        var album = Albums.FirstOrDefault(a => a.Id == albumId);
+        if (album is not null)
+        {
+            Albums.Remove(album);
+            InsertByName(Albums, album with { Name = name });
+        }
     }
 
     public async Task DeleteAlbumAsync(long albumId, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             var album = Albums.FirstOrDefault(a => a.Id == albumId);
             if (album is not null)
@@ -300,33 +456,56 @@ public sealed class AppState
             }
             return;
         }
-        await Library.Catalog.DeleteCollectionAsync(albumId, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.DeleteCollectionAsync(albumId, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        var removed = Albums.FirstOrDefault(a => a.Id == albumId);
+        if (removed is not null)
+        {
+            Albums.Remove(removed);
+        }
     }
 
     public async Task AddToAlbumAsync(long albumId, IReadOnlyList<long> memoryIds, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             return;
         }
-        await Library.Catalog.AddToCollectionAsync(albumId, memoryIds, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        await library.Catalog.AddToCollectionAsync(albumId, memoryIds, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        // Seuls les compteurs et les dates de couverture changent : rafraîchir
+        // les collections suffit, sans recharger les souvenirs.
+        await RefreshCollectionsAsync(library, epoch, ct);
     }
 
     public async Task<IReadOnlyList<MemoryCard>> GetAlbumItemsAsync(long albumId, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             var ids = DemoData.AlbumMembers(albumId);
             return Cards.Where(c => ids.Contains(c.Id)).ToList();
         }
-        return await Library.Catalog.GetCollectionItemsAsync(albumId, ct);
+        return await library.Catalog.GetCollectionItemsAsync(albumId, ct);
     }
 
     public async Task<IReadOnlyList<MemoryCard>> SearchAsync(string query, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             var q = query.Trim();
             return Cards.Where(c =>
@@ -336,73 +515,89 @@ public sealed class AppState
                 .OrderByDescending(c => c.LocalDate)
                 .ToList();
         }
-        return await Library.Catalog.QueryAsync(
+        return await library.Catalog.QueryAsync(
             new MemoryQuery(SearchText: query, IncludeExcluded: true, IncludeUndated: true, Limit: 500), ct);
     }
 
     public async Task SaveRecapAsync(string name, IReadOnlyList<long> memoryIds, CancellationToken ct = default)
     {
-        if (Library is null)
+        var library = Library;
+        if (library is null)
         {
             return;
         }
-        var collection = await Library.Catalog.CreateCollectionAsync(name, CollectionKind.Recap, ct);
-        await Library.Catalog.AddToCollectionAsync(collection.Id, memoryIds, ct);
-        await ReloadAsync(ct);
+
+        var epoch = _libraryEpoch;
+        var collection = await library.Catalog.CreateCollectionAsync(name, CollectionKind.Recap, ct);
+        await library.Catalog.AddToCollectionAsync(collection.Id, memoryIds, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        await RefreshCollectionsAsync(library, epoch, ct);
     }
 
     public async Task SaveSettingsAsync(AppSettings settings, CancellationToken ct = default)
     {
         Settings = settings;
-        if (Library is not null)
+        var library = Library;
+        if (library is not null)
         {
-            await Library.Settings.SaveAsync(settings, ct);
+            await library.Settings.SaveAsync(settings, ct);
         }
     }
 
     public async Task SetTimeZoneAsync(string timeZoneId, CancellationToken ct = default)
     {
         Settings = Settings with { TimeZoneId = timeZoneId };
-        if (Library is not null)
+        var library = Library;
+        if (library is null)
         {
-            await Library.Settings.SaveAsync(Settings, ct);
-            await Library.Catalog.RecalculateClassificationAsync(timeZoneId, ct);
-            await ReloadAsync(ct);
+            return;
         }
+
+        var epoch = _libraryEpoch;
+        await library.Settings.SaveAsync(Settings, ct);
+        await library.Catalog.RecalculateClassificationAsync(timeZoneId, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        // Recalcul structurel des dates classées : rechargement complet assumé.
+        await ReloadAsync(ct);
     }
 
     public async Task<string> BackupAsync(string destinationZip, IProgress<string>? progress = null, CancellationToken ct = default)
     {
-        if (Library is null)
-        {
-            throw new InvalidOperationException("Ouvrez une bibliothèque avant de la sauvegarder.");
-        }
-        var result = await Library.Backup.CreateBackupAsync(destinationZip, progress, ct);
+        var library = Library
+            ?? throw new InvalidOperationException("Ouvrez une bibliothèque avant de la sauvegarder.");
+        var result = await library.Backup.CreateBackupAsync(destinationZip, progress, ct);
         return result.Path;
     }
 
-    public async Task RestoreAsync(string zipPath, string destinationRoot, IProgress<string>? progress = null, CancellationToken ct = default)
-    {
-        if (Library is null)
-        {
-            throw new InvalidOperationException("Ouvrez une bibliothèque avant de restaurer une sauvegarde.");
-        }
-        await Library.Backup.RestoreAsync(zipPath, destinationRoot, progress, ct);
-    }
+    /// <summary>
+    /// Restaure une sauvegarde dans un dossier neuf. Ne dépend pas de la
+    /// bibliothèque ouverte : le premier lancement peut donc restaurer.
+    /// </summary>
+    public Task RestoreAsync(string zipPath, string destinationRoot, IProgress<string>? progress = null, CancellationToken ct = default)
+        => BackupRestoreService.RestoreAsync(zipPath, destinationRoot, progress, ct);
 
     public string? ThumbnailFor(long memoryId)
     {
-        if (Library is not null)
+        var library = Library;
+        if (library is not null)
         {
-            var path = Library.Catalog.GetThumbnailPath(memoryId);
+            var path = library.Catalog.GetThumbnailPath(memoryId);
             if (path is not null)
             {
                 return path;
             }
-            var card = Cards.FirstOrDefault(c => c.Id == memoryId);
+            var card = CardById(memoryId);
             if (card?.Kind == MediaKind.Photo && card.MainAssetId is long assetId)
             {
-                return Library.Catalog.GetAssetPath(assetId);
+                return library.Catalog.GetAssetPath(assetId);
             }
             return null;
         }
@@ -411,22 +606,37 @@ public sealed class AppState
 
     public string? MediaFor(long memoryId)
     {
-        if (Library is not null)
+        var library = Library;
+        if (library is not null)
         {
-            var card = Cards.FirstOrDefault(c => c.Id == memoryId);
-            return card?.MainAssetId is long id ? Library.Catalog.GetAssetPath(id) : null;
+            var card = CardById(memoryId);
+            return card?.MainAssetId is long id ? library.Catalog.GetAssetPath(id) : null;
         }
         return _demoMedia.GetValueOrDefault(memoryId);
     }
 
     public string? OverlayFor(long memoryId)
     {
-        if (Library is not null)
+        var library = Library;
+        if (library is not null)
         {
-            var card = Cards.FirstOrDefault(c => c.Id == memoryId);
-            return card?.OverlayAssetId is long id ? Library.Catalog.GetAssetPath(id) : null;
+            var card = CardById(memoryId);
+            return card?.OverlayAssetId is long id ? library.Catalog.GetAssetPath(id) : null;
         }
         return _demoOverlays.GetValueOrDefault(memoryId);
+    }
+
+    /// <summary>Retrouve la carte courante à partir de son identifiant.</summary>
+    public MemoryCard? CardById(long memoryId)
+    {
+        if (_cardIndex.TryGetValue(memoryId, out var index) &&
+            index >= 0 && index < Cards.Count && Cards[index].Id == memoryId)
+        {
+            return Cards[index];
+        }
+
+        // Repli si l'index est désynchronisé (collection modifiée ailleurs).
+        return Cards.FirstOrDefault(c => c.Id == memoryId);
     }
 
     public IReadOnlyList<MemoryCard> ThisDay(DateOnly day)
@@ -499,6 +709,117 @@ public sealed class AppState
         }
     }
 
+    /// <summary>Instantané complet d'une bibliothèque, chargé hors de l'état courant.</summary>
+    private sealed record LibrarySnapshot(
+        IReadOnlyList<SpaceInfo> Spaces,
+        long SpaceId,
+        IReadOnlyList<MemoryCard> Cards,
+        IReadOnlyList<CollectionInfo> Albums,
+        IReadOnlyList<CollectionInfo> Recaps,
+        AppSettings Settings);
+
+    private static async Task<LibrarySnapshot> LoadSnapshotAsync(
+        MemoLibrary library,
+        long preferredSpaceId,
+        CancellationToken ct)
+    {
+        var spaces = await library.Catalog.GetSpacesAsync(ct);
+        if (spaces.Count == 0)
+        {
+            var space = await library.Catalog.CreateSpaceAsync("Mon export", null, ct);
+            spaces = new[] { space };
+        }
+
+        var spaceId = preferredSpaceId != 0 && spaces.Any(s => s.Id == preferredSpaceId)
+            ? preferredSpaceId
+            : spaces[0].Id;
+        var cards = await library.Catalog.QueryAsync(
+            new MemoryQuery(IncludeExcluded: true, IncludeUndated: true, Limit: int.MaxValue), ct);
+        var albums = await library.Catalog.GetCollectionsAsync(CollectionKind.Album, ct);
+        var recaps = await library.Catalog.GetCollectionsAsync(CollectionKind.Recap, ct);
+
+        return new LibrarySnapshot(spaces, spaceId, cards, albums, recaps, library.Settings.Current);
+    }
+
+    private void ApplyLibrary(MemoLibrary library, LibrarySnapshot snapshot)
+    {
+        // Nouvelle génération avant toute écriture d'état : les continuations
+        // de l'ancienne bibliothèque deviennent obsolètes immédiatement.
+        _libraryEpoch++;
+        Library = library;
+        LibraryPath = library.Info.RootPath;
+        LibraryName = library.Info.Name;
+        ApplySnapshot(snapshot);
+    }
+
+    private void ApplySnapshot(LibrarySnapshot snapshot)
+    {
+        Spaces = snapshot.Spaces;
+        CurrentSpaceId = snapshot.SpaceId;
+        Settings = snapshot.Settings;
+        ReplaceAllCards(snapshot.Cards);
+        Reset(Albums, snapshot.Albums);
+        Reset(Recaps, snapshot.Recaps);
+    }
+
+    private bool IsCurrent(MemoLibrary library, int epoch)
+        => _libraryEpoch == epoch && ReferenceEquals(Library, library);
+
+    /// <summary>Relit une seule carte après une mutation qui peut affecter des champs dérivés.</summary>
+    private async Task RefreshCardAsync(
+        MemoLibrary library,
+        int epoch,
+        long memoryId,
+        Func<MemoryCard, MemoryCard> fallback,
+        CancellationToken ct)
+    {
+        MemoryCard? refreshed = null;
+        try
+        {
+            refreshed = await library.Catalog.GetCardAsync(memoryId, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // L'écriture a réussi : une lecture de contrôle en échec ne doit pas
+            // faire échouer l'action. La projection locale sert de repli.
+        }
+
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+        ReplaceCard(memoryId, current => refreshed ?? fallback(current));
+    }
+
+    /// <summary>Rafraîchit uniquement les albums et récapitulatifs (compteurs, dates, couvertures).</summary>
+    private async Task RefreshCollectionsAsync(MemoLibrary library, int epoch, CancellationToken ct)
+    {
+        var albums = await library.Catalog.GetCollectionsAsync(CollectionKind.Album, ct);
+        var recaps = await library.Catalog.GetCollectionsAsync(CollectionKind.Recap, ct);
+        if (!IsCurrent(library, epoch))
+        {
+            return;
+        }
+
+        Reset(Albums, albums);
+        Reset(Recaps, recaps);
+    }
+
+    private void ReplaceAllCards(IReadOnlyList<MemoryCard> cards)
+    {
+        Cards.Clear();
+        _cardIndex.Clear();
+        for (var i = 0; i < cards.Count; i++)
+        {
+            Cards.Add(cards[i]);
+            _cardIndex[cards[i].Id] = i;
+        }
+    }
+
     private void Replace(Func<MemoryCard, bool> predicate, Func<MemoryCard, MemoryCard> update)
     {
         for (var i = 0; i < Cards.Count; i++)
@@ -509,12 +830,39 @@ public sealed class AppState
             }
         }
     }
+
+    private void ReplaceCard(long memoryId, Func<MemoryCard, MemoryCard> update)
+    {
+        if (_cardIndex.TryGetValue(memoryId, out var index) &&
+            index >= 0 && index < Cards.Count && Cards[index].Id == memoryId)
+        {
+            Cards[index] = update(Cards[index]);
+            return;
+        }
+
+        Replace(c => c.Id == memoryId, update);
+    }
+
+    private static void Reset<T>(ObservableCollection<T> target, IReadOnlyList<T> items)
+    {
+        target.Clear();
+        foreach (var item in items)
+        {
+            target.Add(item);
+        }
+    }
+
+    /// <summary>Insère une collection en respectant l'ordre de GetCollectionsAsync (nom, id).</summary>
+    private static void InsertByName(ObservableCollection<CollectionInfo> target, CollectionInfo item)
+    {
+        var index = 0;
+        while (index < target.Count &&
+               (string.Compare(target[index].Name, item.Name, StringComparison.OrdinalIgnoreCase) < 0 ||
+                (string.Equals(target[index].Name, item.Name, StringComparison.OrdinalIgnoreCase) &&
+                 target[index].Id < item.Id)))
+        {
+            index++;
+        }
+        target.Insert(index, item);
+    }
 }
-
-
-
-
-
-
-
-
