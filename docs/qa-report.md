@@ -8,6 +8,8 @@ Worktree : `memo-wt/qa`, branche `feat/qa`
 
 Objet : QA indépendante de bout en bout, sans modification du code applicatif.
 
+> **Mise à jour du 30 octobre 2026** — ce rapport décrit le commit `c620cba`. Plusieurs constats ont été corrigés depuis et revérifiés par build, tests et captures : QA-03 (récapitulatifs relus), QA-05 (limites ZIP), QA-12 (recherche harmonisée), QA-16 (contenu des albums), QA-18 (hash de restauration), QA-27 (captures refaites), ainsi que les défauts couverts par les issues #21–#50 (démarrage, import, lecteur, recherche, sauvegarde, migrations, notifications). QA-14 (calques étirés dans le lecteur Story) reste ouvert. Les limites restantes sont tenues à jour dans `RELEASE.md` et `PROGRESS.md`.
+
 ## 1. Verdict
 
 La construction et les tests automatisés passent. Le cœur import/catalogue est globalement solide : ordre d'import stable hors conflit, réimport idempotent, espaces sources séparés, dates corrigées conservées, sauvegarde/restauration fidèle, chemins internes relatifs et miniatures photo fonctionnelles.

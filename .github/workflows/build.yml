@@ -123,6 +123,18 @@ jobs:
         shell: pwsh
         run: ./scripts/build-installer.ps1 -SkipPublish
 
+      - name: Vérifier les ressources XAML de la publication
+        shell: pwsh
+        run: |
+          if (-not (Test-Path artifacts/publish/Memo.pri)) {
+            throw 'Memo.pri absent de la publication : l''application installée ne démarrerait pas.'
+          }
+          $xbf = @(Get-ChildItem artifacts/publish -Filter *.xbf -Recurse -File)
+          if ($xbf.Count -eq 0) {
+            throw 'Aucun fichier .xbf dans la publication : les pages XAML ne peuvent pas être chargées.'
+          }
+          Write-Host "$($xbf.Count) fichiers .xbf et Memo.pri présents."
+
       - name: Téléverser l'installateur
         if: steps.inno.outputs.available == 'true'
         uses: actions/upload-artifact@v4

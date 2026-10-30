@@ -268,13 +268,14 @@ Légende : `[ ]` non exécuté, `[x]` réussi, `[~]` bloqué ou défaut constat�
 ## 11. Installation, mise à jour et release
 
 - [ ] Construire l'installateur depuis la branche de release ; vérifier que les fichiers `installer/`, `scripts/` et `LICENSES/` sont bien présents.
+- [ ] Vérifier que `artifacts\publish` contient `Memo.pri` et les fichiers `.xbf` de toutes les pages.
 - [ ] Installer dans `%LOCALAPPDATA%\Programs\Memo` sans élévation.
 - [ ] Vérifier SmartScreen et le SHA-256 publié.
 - [ ] Lancer, créer une bibliothèque, importer, fermer, relancer.
 - [ ] Désinstaller : programmes supprimés, données utilisateur conservées ou clairement documentées.
 - [ ] Mettre à jour par-dessus une version précédente : bibliothèque et réglages conservés.
 - [ ] Vérifier les liens README (`docs/install.md`, `docs/release.md`) et les licences.
-- [ ] Vérifier la présence de `MemoSetup-0.1.0.exe` et des notes de release.
+- [ ] Vérifier la présence de `Memo-0.1.0-win-x64-setup.exe` et des notes de release.
 
 ## 12. Signature de recette
 

@@ -105,9 +105,16 @@ Vérifier au minimum :
 
 ```powershell
 Test-Path artifacts\publish\Memo.exe
+Test-Path artifacts\publish\Memo.pri
+(Get-ChildItem artifacts\publish -Filter *.xbf -Recurse).Count -gt 0
 Test-Path artifacts\publish\libvlc\win-x64\libvlc.dll
 Test-Path artifacts\publish\Assets\Memo.ico
 ```
+
+`dotnet publish` n'inclut pas toujours les fichiers XAML compilés (`.xbf`) ni
+`Memo.pri` pour une application WinUI 3 non empaquetée. Le script copie ces
+artefacts depuis la sortie de build Release ; sans eux, l'application installée
+meurt au démarrage en `STATUS_STOWED_EXCEPTION`.
 
 La publication complète contient aussi les symboles `.pdb` et les binaires
 LibVLC x86/ARM64. L'installateur les exclut ; l'artefact CI `memo-win-x64` est

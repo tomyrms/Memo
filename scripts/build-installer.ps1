@@ -109,6 +109,13 @@ try {
         New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
 
         Write-Host ''
+        Write-Host 'Build Release (artefacts XAML)...' -ForegroundColor Cyan
+        & dotnet build $projectPath -c Release -p:Platform=x64
+        if ($LASTEXITCODE -ne 0) {
+            throw "dotnet build a échoué (code $LASTEXITCODE)."
+        }
+
+        Write-Host ''
         Write-Host 'Publication self-contained win-x64...' -ForegroundColor Cyan
         $publishArgs = @(
             'publish', $projectPath,
@@ -126,6 +133,35 @@ try {
     else {
         Write-Host 'Publication réutilisée (-SkipPublish).'
     }
+
+    # WinUI non empaqueté : `dotnet publish` omet les artefacts XAML compilés
+    # (.xbf) et Memo.pri. L'application publiée démarre alors sans ressources
+    # XAML et meurt en STATUS_STOWED_EXCEPTION. On les recopie depuis la sortie
+    # de build Release, qui contient les mêmes assemblages.
+    $buildOutput = Get-ChildItem (Join-Path $repoRoot 'src\Memo.App\bin\Release') -Directory |
+        ForEach-Object { Join-Path $_.FullName 'win-x64' } |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_ 'Memo.pri') } |
+        Select-Object -First 1
+    if (-not $buildOutput) {
+        throw "Sortie de build Release introuvable : impossible de copier les artefacts XAML."
+    }
+
+    $xbfFiles = @(Get-ChildItem -LiteralPath $buildOutput -Filter '*.xbf' -Recurse -File)
+    if ($xbfFiles.Count -eq 0) {
+        throw "Aucun fichier .xbf dans $buildOutput. Lancez d'abord un build Release."
+    }
+
+    foreach ($file in $xbfFiles) {
+        $relative = $file.FullName.Substring($buildOutput.Length + 1)
+        $destination = Join-Path $publishDir $relative
+        $parent = Split-Path -Parent $destination
+        if (-not (Test-Path -LiteralPath $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+        }
+        Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+    }
+    Copy-Item -LiteralPath (Join-Path $buildOutput 'Memo.pri') -Destination (Join-Path $publishDir 'Memo.pri') -Force
+    Write-Host ("Artefacts XAML copiés : {0} fichiers .xbf + Memo.pri" -f $xbfFiles.Count)
 
     $exePath = Join-Path $publishDir 'Memo.exe'
     if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
