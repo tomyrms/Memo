@@ -73,6 +73,11 @@ if (!result.Succeeded)
   CancellationToken)`.
 - `StoryExportSmoke.RunSelfCheckAsync(string tempDirectory, CancellationToken)` :
   contrôle manuel sur des images synthétiques.
+- `StoryExportPreviewBuilder.AnalyzeAsync(sources, progress, cancellationToken)` :
+  inspection des en-têtes (dimensions d'affichage, durée, audio, calque) avant export.
+- `StoryExportPreviewBuilder.CreatePlan(analyses, quality, includeAudio,
+  photoDurationSeconds)` : lignes de prévisualisation, éléments exacts de la requête,
+  durée totale, taille estimée et avertissements.
 
 Les erreurs prévisibles (fichier existant, source absente, codec absent, espace
 insuffisant, annulation) sont retournées dans `StoryExportResult`. Elles ne lèvent pas
@@ -168,6 +173,31 @@ totale (Media Foundation ne fournit pas d'événement par clip).
 
 `CancellationToken` annule l'opération `RenderToFileAsync` en cours. Le résultat porte
 `Cancelled = true`, `OutputPath = null`, et le fichier final n'existe pas.
+
+### Prévisualisation avant export
+
+`StoryView` expose une prévisualisation avant de lancer le rendu. Elle liste, dans l'ordre :
+
+- le numéro, le type et la date de l'élément ;
+- ses dimensions d'affichage et son orientation (rotation EXIF comprise) ;
+- sa durée (durée choisie pour les photos, durée réelle des vidéos) ;
+- la présence d'un calque et d'une piste audio.
+
+L'utilisateur choisit la qualité (1080p/720p), l'inclusion de l'audio et la durée des photos
+(1 à 30 s). La durée totale et la taille approximative sont recalculées à chaque changement.
+Un média introuvable est signalé et exclu de la requête ; un en-tête illisible, un format
+inconnu ou des dimensions absentes produisent un avertissement. Un calque introuvable ou
+illisible est signalé et ignoré. Les options et la sélection restent disponibles après un
+export réussi ou annulé.
+
+L'estimation de taille reprend les débits de `StoryExporter` (8 Mbit/s en 1080p, 5 Mbit/s
+en 720p, 192 kbit/s d'audio, +25 % pour le conteneur), sans la marge de sécurité disque.
+
+Après confirmation, `StoryExporter` reçoit exactement la requête prévisualisée. La progression
+est affichée et un bouton « Annuler l'export » annule le rendu ; un export annulé ne conserve
+aucun fichier final. La prévisualisation vérifie les en-têtes, pas le décodage complet ni les
+codecs : un fichier peut donc échouer au rendu malgré l'aperçu, avec le diagnostic de
+`StoryExporter`.
 
 ## Limites réelles
 
@@ -333,5 +363,6 @@ paysage dans une sortie portrait a bien des bandes noires en haut et en bas.
   - refus d'écrasement : fichier existant intact ;
   - remplacement explicite : MP4 valide ;
   - annulation : `Cancelled = true`, aucun fichier final, aucun `.tmp.mp4` restant.
-- Le self-check n'est **pas** branché dans l'interface : aucun fichier existant n'a été
-  modifié. L'intégration UI (bouton, dialogue, progression) revient au parent.
+- Le self-check n'est **pas** branché dans l'interface : il reste un contrôle manuel. La
+  prévisualisation, les options, la progression et l'annulation sont intégrées à
+  `StoryView`, sans modifier les autres pages.
