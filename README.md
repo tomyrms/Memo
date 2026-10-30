@@ -103,6 +103,8 @@ Dépendances principales : Windows App SDK 1.8, SkiaSharp 4.154, LibVLCSharp 3.1
 | [Formats](docs/formats.md) | Format observé, variantes, contrat d'adaptateur |
 | [Installation](docs/install.md) | Prérequis, premiers pas, dépannage |
 | [Release](docs/release.md) | Procédure de publication |
+| [QA](docs/qa-report.md) | Constats, risques et tests non exécutés |
+| [Accessibilité](docs/accessibility.md) | Audit clavier, lecteur d’écran, contraste, échelle |
 | [Progression](PROGRESS.md) | État réel, décisions, blocages |
 | [Design](DESIGN.md) | Direction artistique et revues d'écran |
 

@@ -773,3 +773,14 @@ Constats chiffrés : 1 `AutomationProperties.Name`, 0 `LiveSetting`, 0 `HeadingL
 0 `LabeledBy`, 0 `HelpText`, 0 `AccessKey`, 0 `KeyboardAccelerator`, 0 `TabIndex`,
 2 `IsTabStop` (dont un mort), 7 boutons icône sans nom dans le lecteur, 5 grilles de
 tuiles sans nom accessible.
+
+## Suites données (30 octobre 2026, commit de finition)
+
+- Noms accessibles ajoutés aux 7 commandes du lecteur Story, au bouton de reprise, à la zone de lecture et aux tuiles mémoire (date, type, lieu, favori, calque, média manquant).
+- Le lecteur désactive la coquille pendant la lecture et restaure le focus à la fermeture.
+- Menu contextuel de la bibliothèque réellement câblé (clic droit) et accélérateur Ctrl+F pour la recherche.
+- Barre de filtres passée sur deux lignes pour éviter le chevauchement à 1024 px et en portrait.
+- Compteur du lecteur sur fond sombre, piste de progression plus contrastée, badge de démonstration en accent plein.
+- Annonce polie du compteur d'éléments et nom du groupe de progression.
+
+Restent à confirmer : parcours Narrateur complet, texte à 200 %, palier 1024 px, piège de focus strict du lecteur et annonce individuelle des segments de progression. L'audit initial reste la référence des constats non corrigés.
