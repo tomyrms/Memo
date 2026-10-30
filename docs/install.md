@@ -70,15 +70,14 @@ l'exécution x64.
 
 ## Premier lancement
 
-Au premier lancement, Memo ouvre une **bibliothèque de démonstration** avec des
-médias synthétiques. Aucun compte n'est demandé et aucun média personnel n'est
-créé ni envoyé sur le réseau.
+Au premier lancement, Memo ouvre la dernière bibliothèque utilisée ou, à défaut,
+un mode démonstration explicite avec des médias synthétiques. Aucun compte n'est
+demandé et aucun média personnel n'est créé ni envoyé sur le réseau.
 
-L'écran Réglages affiche la version, le mode de données et le chemin de la
-bibliothèque lorsqu'une bibliothèque réelle est ouverte. Dans la version 0.1.0,
-la création et l'ouverture d'une bibliothèque affichent encore un message
-« non disponible » : le noyau `Memo.Core` existe et est testé, mais la liaison
-avec l'interface reste à faire.
+Pour créer une bibliothèque réelle : **Réglages → Bibliothèque → Créer**, choisir
+un nom et un dossier vide. Memo y crée `catalog.db`, `media/` et `derived/`.
+L'écran Réglages affiche ensuite la version, le chemin, le nombre de souvenirs et
+d'albums.
 
 En cas de plantage au démarrage, un journal est écrit dans le dossier
 d'installation :
@@ -89,26 +88,18 @@ d'installation :
 
 ## Import d'un export
 
-### Ce qui fonctionne dans 0.1.0
-
-L'écran **Imports** permet de sélectionner plusieurs fichiers ZIP ou un dossier
-déjà extrait et d'afficher la sélection. Le bouton d'import affiche toutefois
-« Bibliothèque non ouverte » : l'écriture dans une bibliothèque n'est pas
-encore reliée à l'interface. Aucun fichier utilisateur n'est modifié par cette
-version.
-
-### Parcours prévu
-
-1. Ouvrir ou créer une bibliothèque depuis **Réglages** (fonction à relier).
+1. Créer ou ouvrir une bibliothèque depuis **Réglages**.
 2. Aller dans **Imports**, choisir l'espace source.
 3. Sélectionner **tous les ZIP du même export**, dans n'importe quel ordre. Un
    export peut être réparti en plusieurs archives ; les médias, calques et
-   métadonnées peuvent arriver séparément.
+   métadonnées peuvent arriver séparément. Le glisser-déposer de ZIP ou de
+   dossiers est également accepté.
 4. Ne pas dézipper et ne pas renommer les archives avant l'import. Les octets
-   sources seront conservés.
-5. Lancer l'import et laisser la bibliothèque se compléter. Un réimport de la
-   même archive ne doit pas créer de doublon ni effacer favoris, albums ou dates
-   corrigées.
+   sources sont conservés.
+5. Lancer l'import et laisser la bibliothèque se compléter. Le bilan affiche les
+   souvenirs, médias, calques, doublons ignorés et diagnostics.
+6. Un réimport de la même archive ne crée pas de doublon et n'efface ni favoris,
+   ni albums, ni dates corrigées.
 
 Les médias des conversations (`chat_media/`) restent hors périmètre. Aucun
 téléchargement distant n'est activé dans cette version.
@@ -127,12 +118,11 @@ fichiers que vous y auriez ajoutés vous-même.
 
 ### Bibliothèques
 
-La version 0.1.0 **ne crée aucune bibliothèque** : l'emplacement sera choisi
-explicitement par l'utilisateur lors de la création, et non imposé par
-l'installateur. Une bibliothèque ne doit pas être placée dans le dossier
-d'installation.
+L'emplacement est choisi explicitement par l'utilisateur lors de la création
+(**Réglages → Bibliothèque → Créer**), et non imposé par l'installateur. Une
+bibliothèque ne doit pas être placée dans le dossier d'installation.
 
-La structure définie par le noyau et documentée dans la
+La structure créée par le noyau et documentée dans la
 [décision 0001](decisions/0001-socle-windows.md) est :
 
 ```text
@@ -221,8 +211,8 @@ signature, pas par extension. En cas de miniature absente :
   son contenu ;
 - réinstallez Memo si la DLL SkiaSharp manque.
 
-Le décodage WebP est couvert par les tests de `Memo.Media`, mais la composition
-de calques réels reste à valider visuellement sur un corpus représentatif.
+Le décodage WebP et la composition des calques sont couverts par les tests de
+`Memo.Media` et vérifiés à l'écran sur des paires synthétiques.
 
 ### L'application ne démarre pas
 
