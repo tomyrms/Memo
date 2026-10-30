@@ -2,6 +2,8 @@ using Memo.App.Services;
 using Memo.Core;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 
 namespace Memo.App.Pages;
@@ -80,6 +82,44 @@ public sealed partial class ImportsPage : Page
         WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
     }
 
+    private void OnDragOver(object sender, DragEventArgs e)
+    {
+        if (e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            e.AcceptedOperation = DataPackageOperation.Copy;
+            e.DragUIOverride.Caption = "Ajouter à Memo";
+            e.DragUIOverride.IsCaptionVisible = true;
+        }
+    }
+
+    private async void OnDrop(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            return;
+        }
+
+        var items = await e.DataView.GetStorageItemsAsync();
+        foreach (var item in items)
+        {
+            if (item is StorageFile file && file.FileType.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!_staged.Contains(file.Path, StringComparer.OrdinalIgnoreCase))
+                {
+                    _staged.Add(file.Path);
+                }
+            }
+            else if (item is StorageFolder folder)
+            {
+                if (!_staged.Contains(folder.Path, StringComparer.OrdinalIgnoreCase))
+                {
+                    _staged.Add(folder.Path);
+                }
+            }
+        }
+        UpdateSelection();
+    }
+
     private void UpdateSelection()
     {
         SelectionPanel.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -100,7 +140,22 @@ public sealed partial class ImportsPage : Page
         UpdateSelection();
     }
 
-    private async void OnImport(object sender, RoutedEventArgs e)
+    private async void OnImport(object sender, RoutedEventArgs e) => await StartImportAsync();
+
+    public async Task ImportPathsAsync(IReadOnlyList<string> paths)
+    {
+        foreach (var path in paths)
+        {
+            if (!_staged.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                _staged.Add(path);
+            }
+        }
+        UpdateSelection();
+        await StartImportAsync();
+    }
+
+    private async Task StartImportAsync()
     {
         if (_staged.Count == 0)
         {
@@ -287,4 +342,5 @@ public sealed partial class ImportsPage : Page
         HistoryEmpty.Text = "Aucun import enregistré.";
     }
 }
+
 

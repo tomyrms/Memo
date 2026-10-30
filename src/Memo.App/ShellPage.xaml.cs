@@ -90,6 +90,15 @@ public sealed partial class ShellPage : UserControl
         }
     }
 
+    public async Task RunImportAsync(IReadOnlyList<string> paths)
+    {
+        OpenImports();
+        if (ContentFrame.Content is ImportsPage page)
+        {
+            await page.ImportPathsAsync(paths);
+        }
+    }
+
     public void OpenImports()
     {
         foreach (var item in Nav.MenuItems.OfType<NavigationViewItem>())
@@ -120,6 +129,7 @@ public sealed partial class ShellPage : UserControl
         OpenImports();
     }
 }
+
 
 
 

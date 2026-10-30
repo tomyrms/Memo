@@ -42,7 +42,20 @@ public sealed partial class MainWindow : Window
             Shell.StartPage = pageArg["--page=".Length..];
         }
 
-        if (Environment.GetCommandLineArgs().Any(a => a.Equals("--story-photo", StringComparison.OrdinalIgnoreCase)))
+        var argv = Environment.GetCommandLineArgs();
+        var importIndex = Array.FindIndex(argv, a => a.Equals("--import", StringComparison.OrdinalIgnoreCase));
+        if (importIndex >= 0)
+        {
+            var importPaths = argv.Skip(importIndex + 1)
+                .TakeWhile(a => !a.StartsWith("--", StringComparison.Ordinal))
+                .ToArray();
+            if (importPaths.Length > 0)
+            {
+                Shell.Ready += async (_, _) => await Shell.RunImportAsync(importPaths);
+            }
+        }
+
+        if (argv.Any(a => a.Equals("--story-photo", StringComparison.OrdinalIgnoreCase)))
         {
             Shell.Ready += (_, _) =>
             {
@@ -147,6 +160,7 @@ public sealed partial class MainWindow : Window
         Story.Closed -= OnStoryClosed;
     }
 }
+
 
 
 

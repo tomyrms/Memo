@@ -138,12 +138,26 @@ public sealed class AppState
         }
 
         var result = await Library.Import.RunAsync(new ImportRequest(spaceId, paths), progress, ct);
-        await GenerateMissingThumbnailsAsync(ct);
+
+        // Les médias sont visibles immédiatement ; les miniatures se préparent
+        // ensuite sans bloquer la consultation.
+        await ReloadAsync(ct);
+        progress?.Report(new ImportProgress(
+            ImportPhase.Analyzing,
+            "Préparation des miniatures",
+            result.Counters.MediaImported,
+            result.Counters.MediaImported,
+            null,
+            result.Counters));
+        await GenerateMissingThumbnailsAsync(progress, result.Counters, ct);
         await ReloadAsync(ct);
         return result;
     }
 
-    public async Task GenerateMissingThumbnailsAsync(CancellationToken ct = default)
+    public async Task GenerateMissingThumbnailsAsync(
+        IProgress<ImportProgress>? progress = null,
+        ImportCounters? counters = null,
+        CancellationToken ct = default)
     {
         if (Library is null)
         {
@@ -152,10 +166,14 @@ public sealed class AppState
 
         var cards = await Library.Catalog.QueryAsync(
             new MemoryQuery(IncludeExcluded: true, IncludeUndated: true, Limit: int.MaxValue), ct);
+        var missing = cards
+            .Where(c => !c.HasThumbnail && c.MainAssetId is long)
+            .ToList();
+        var done = 0;
         var thumbsDirectory = Path.Combine(Library.Info.RootPath, "derived", "thumbs");
         Directory.CreateDirectory(thumbsDirectory);
 
-        foreach (var card in cards)
+        foreach (var card in missing)
         {
             ct.ThrowIfCancellationRequested();
             if (card.HasThumbnail || card.MainAssetId is not long assetId)
@@ -178,6 +196,15 @@ public sealed class AppState
             {
                 await Library.Catalog.SetThumbnailAsync(card.Id, $"derived/thumbs/{card.Id}.jpg", ct);
             }
+
+            done++;
+            progress?.Report(new ImportProgress(
+                ImportPhase.Analyzing,
+                "Préparation des miniatures",
+                done,
+                missing.Count,
+                null,
+                counters ?? ImportCounters.Empty));
         }
     }
 
@@ -395,13 +422,13 @@ public sealed class AppState
 
     public IReadOnlyList<MemoryCard> ThisDay(DateOnly day)
         => Cards
-            .Where(c => c.LocalDate is { } d && d.Month == day.Month && d.Day == day.Day && d.Year < day.Year)
+            .Where(c => !c.IsExcluded && c.LocalDate is { } d && d.Month == day.Month && d.Day == day.Day && d.Year < day.Year)
             .OrderByDescending(c => c.LocalDate)
             .ToList();
 
     public IReadOnlyList<MemoryCard> OneYearAgo(DateOnly day)
         => Cards
-            .Where(c => c.LocalDate is { } d && d.Year == day.Year - 1 && d.Month == day.Month && d.Day == day.Day)
+            .Where(c => !c.IsExcluded && c.LocalDate is { } d && d.Year == day.Year - 1 && d.Month == day.Month && d.Day == day.Day)
             .ToList();
 
     public IReadOnlyList<MemoryCard> Undated()
@@ -458,6 +485,7 @@ public sealed class AppState
         }
     }
 }
+
 
 
 

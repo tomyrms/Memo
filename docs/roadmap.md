@@ -93,4 +93,15 @@ Ces fonctions produisent de nouvelles données dérivées ; elles ne recréent p
 
 `P0` désigne les fondations et fonctions centrales du premier parcours. `P1` complète ce parcours ou la redécouverte quotidienne. `P2` couvre les enrichissements suivants. Ces niveaux ne sont pas des estimations de durée.
 
-Chaque issue contient ses dépendances, son périmètre, des critères cochables et une validation ciblée sur le risque réel. Les contrôles de rendu et de restauration utilisent des cas représentatifs ; aucun test de documentation ni validation massive sans objectif concret n’est demandé.
+Chaque issue contient ses dépendances, son périmètre, des critères cochables et une validation ciblée sur le risque réel. Les contrôles de rendu et de restauration utilisent des cas représentatifs ; aucun test de documentation ni validation massive sans objectif concret n'est demandé.
+
+## État de livraison — 30 octobre 2026
+
+| Jalon | État | Preuves |
+|---|---|---|
+| M1 — importer, consulter, retrouver | **réalisé, validation Windows propre à faire** | 39 tests Core, 69 tests Media, import UI de 6 ZIP, captures écran, sauvegarde/restauration 23 souvenirs |
+| M2 — redécouverte | **réalisé avec limites** | accueil, Surprends-moi, récapitulatifs enregistrés, export MP4, rappels planifiés, carte hors ligne |
+| M3 — recherche locale | **réalisé avec limites** | OCR Windows local, empreintes dHash, groupes de visages, recherche visuelle dans l'interface |
+| Distribution | **en cours** | installateur Inno Setup, release 0.1.0, validation sur machine propre non disponible |
+
+Les éléments « réalisé » ne dispensent pas des vérifications manuelles listées dans `docs/qa-report.md` et `docs/manual-tests.md`. Les limites (index distant, packs de langue, visages indicatifs, signature) restent ouvertes.

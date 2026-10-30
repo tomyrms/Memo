@@ -108,3 +108,26 @@ Ce point est une exigence de l'importeur de fichiers locaux, pas une demande d'a
 - Demandes et corrections du propriétaire du projet : plusieurs ZIP, Windows, consultation locale, Flashbacks et autres fonctions de redécouverte.
 - Deux versions d'une analyse externe du même ZIP et un inventaire CSV fournis le 30 octobre 2026. Ils ne remplacent pas la validation binaire des médias.
 - [Export officiel Snapchat](https://help.snapchat.com/hc/en-us/articles/7012305371156-How-do-I-download-my-data-from-Snapchat) : procédure ZIP/index puis récupération des Souvenirs, consultée pendant le cadrage.
+
+## Implémentation livrée (30 octobre 2026)
+
+Cette section décrit ce qui est réellement en place, y compris les écarts avec la piste initiale.
+
+- **Interface** : WinUI 3 non empaqueté, auto-contenu, x64. `NavigationView`, `ContentDialog`, `InfoBar`, thèmes clair/sombre, focus système teinté.
+- **Vidéo** : LibVLC est utilisé en mode *callbacks de frames* (`SetVideoFormatCallbacks` / `SetVideoCallbacks`), rendu par `SKXamlCanvas`. Aucune fenêtre de sortie VLC, aucun `MediaPlayerElement`, aucune dépendance à l'extension HEVC Windows. Les frames sont copiées en BGRA et composées avec le calque dans le même repère.
+- **Images** : SkiaSharp décode JPEG/PNG/WebP, applique l'EXIF une fois, compose les calques avec conservation de l'alpha.
+- **Catalogue** : SQLite, migrations par `PRAGMA user_version`, WAL, une connexion par opération. Les chemins stockés sont relatifs.
+- **Import** : `ZipArchive` en streaming, SHA-256, stockage content-addressed, idempotence par archive et par entrée, espaces sources séparés, reprise par statut d'archive.
+- **Dates** : `creation_time` MP4 (UTC) et EXIF éventuel conservés comme candidats ; correction manuelle prioritaire ; recalcul explicite du classement lors d'un changement de fuseau.
+- **Miniatures** : générées après l'import en arrière-plan (SkiaSharp pour les images, LibVLC pour les vidéos). Un échec de miniature ne rend pas le média indisponible.
+- **Analyses locales** : OCR via `Windows.Media.Ocr`, empreintes dHash, détection de visages via `Windows.Media.FaceAnalysis`, descripteurs 64 bits. Aucun envoi réseau. Les groupes sont des suggestions.
+- **Rappels** : `AppNotificationManager` + tâche planifiée `schtasks` (`Memo.Reminder.<guid>`), désactivation qui supprime la tâche, état local `reminders.json`.
+- **Export** : `Windows.Media.Editing.MediaComposition` vers MP4 H.264 ; calques en `MediaOverlay`, audio optionnel, écriture temporaire puis renommage.
+- **Distribution** : Inno Setup, installation par utilisateur, DLL LibVLC séparées (LGPL), aucun média personnel dans le paquet.
+
+### Points non implémentés ou non validés
+
+- Adaptateur d'index Snapchat avec liens distants : volontairement inactif, aucun exemple réel validé.
+- Validation sur une installation Windows propre sans codecs HEVC/WebP : non réalisée.
+- Signature de code : absente.
+- Tests UI automatisés : non disponibles ; validation par captures et scénarios manuels.
