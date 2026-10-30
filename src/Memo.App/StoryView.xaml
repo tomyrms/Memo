@@ -56,34 +56,12 @@
                     Foreground="White" />
             </Border>
 
-            <Border
-                x:Name="ExportPanel"
-                Margin="24"
-                Padding="20"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Background="#E60E0D0C"
-                BorderBrush="#33F4EFE7"
-                BorderThickness="1"
-                CornerRadius="8"
-                Visibility="Collapsed">
-                <StackPanel Width="320" Spacing="10">
-                    <TextBlock
-                        x:Name="ExportTitle"
-                        FontSize="15"
-                        Foreground="#F4EFE7"
-                        Text="Export de la Story" />
-                    <ProgressBar x:Name="ExportProgress" Maximum="100" />
-                    <TextBlock
-                        x:Name="ExportStatus"
-                        FontSize="12"
-                        Foreground="#B0A79A"
-                        Text="Préparation…" />
-                </StackPanel>
-            </Border>
         </Grid>
 
-        <Grid Grid.Row="2" Margin="32,0,32,18">
+        <Grid
+            x:Name="ControlsBar"
+            Grid.Row="2"
+            Margin="32,0,32,18">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -206,6 +184,247 @@
                 </Button>
             </StackPanel>
         </Grid>
+
+        <!-- Prévisualisation : ordre, durées, calques, audio et options avant tout rendu. -->
+        <Border
+            x:Name="PreviewPanel"
+            Grid.RowSpan="3"
+            AutomationProperties.Name="Prévisualisation de l'export"
+            Background="#CC000000"
+            Visibility="Collapsed">
+            <Border
+                Width="800"
+                Margin="24"
+                Padding="24"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Stretch"
+                Background="#F20E0D0C"
+                BorderBrush="#3DF4EFE7"
+                BorderThickness="1"
+                CornerRadius="10"
+                RequestedTheme="Dark">
+                <Grid RowSpacing="14">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <StackPanel Spacing="2">
+                            <TextBlock
+                                FontSize="20"
+                                FontWeight="SemiBold"
+                                Foreground="#F4EFE7"
+                                Text="Prévisualiser l'export" />
+                            <TextBlock
+                                x:Name="PreviewSummary"
+                                AutomationProperties.LiveSetting="Polite"
+                                FontSize="12"
+                                Foreground="#B0A79A"
+                                Text="Analyse des médias…"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ProgressRing
+                            x:Name="PreviewBusy"
+                            Width="20"
+                            Height="20"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Foreground="#E39A5C"
+                            IsActive="False"
+                            Visibility="Collapsed" />
+                    </Grid>
+
+                    <Grid Grid.Row="2">
+                        <ScrollViewer
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="PreviewItems" Spacing="6" />
+                        </ScrollViewer>
+                        <TextBlock
+                            x:Name="PreviewEmpty"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Foreground="#B0A79A"
+                            Text="Analyse des médias…"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                    </Grid>
+
+                    <Border
+                        Grid.Row="3"
+                        Padding="14"
+                        Background="#14F4EFE7"
+                        CornerRadius="6">
+                        <Grid ColumnSpacing="18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="#B0A79A"
+                                    Text="Qualité" />
+                                <ComboBox
+                                    x:Name="PreviewQualityBox"
+                                    Width="190"
+                                    AutomationProperties.Name="Qualité de l'export"
+                                    Background="#1C1917"
+                                    BorderBrush="#4DF4EFE7"
+                                    Foreground="#F4EFE7"
+                                    SelectionChanged="OnPreviewQualityChanged">
+                                    <ComboBoxItem Content="1080p · qualité maximale" Tag="1080" IsSelected="True" />
+                                    <ComboBoxItem Content="720p · fichier plus léger" Tag="720" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Spacing="4">
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="#B0A79A"
+                                    Text="Audio des vidéos" />
+                                <ToggleSwitch
+                                    x:Name="PreviewAudioToggle"
+                                    AutomationProperties.Name="Inclure l'audio des vidéos"
+                                    Foreground="#F4EFE7"
+                                    OffContent="Non"
+                                    OnContent="Oui"
+                                    Toggled="OnPreviewAudioToggled" />
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" Spacing="4">
+                                <TextBlock
+                                    FontSize="11"
+                                    Foreground="#B0A79A"
+                                    Text="Durée des photos" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <NumberBox
+                                        x:Name="PreviewPhotoDuration"
+                                        Width="105"
+                                        AutomationProperties.Name="Durée d'affichage des photos en secondes"
+                                        Background="#1C1917"
+                                        BorderBrush="#4DF4EFE7"
+                                        Foreground="#F4EFE7"
+                                        Maximum="30"
+                                        Minimum="1"
+                                        SmallChange="1"
+                                        SpinButtonPlacementMode="Compact"
+                                        ValueChanged="OnPreviewPhotoDurationChanged" />
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        Foreground="#B0A79A"
+                                        Text="s" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <TextBlock
+                                x:Name="PreviewEstimate"
+                                Grid.Column="3"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom"
+                                FontSize="12"
+                                Foreground="#F4EFE7"
+                                Text="Durée estimée —"
+                                TextAlignment="Right"
+                                TextWrapping="Wrap" />
+                        </Grid>
+                    </Border>
+
+                    <InfoBar
+                        x:Name="PreviewWarningBar"
+                        Grid.Row="4"
+                        IsClosable="False"
+                        IsOpen="False"
+                        Severity="Warning"
+                        Title="Points à vérifier" />
+
+                    <StackPanel
+                        Grid.Row="5"
+                        HorizontalAlignment="Right"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                        <Button
+                            Padding="16,8"
+                            AutomationProperties.Name="Fermer la prévisualisation"
+                            Background="#1C1917"
+                            BorderBrush="#4DF4EFE7"
+                            BorderThickness="1"
+                            Click="OnPreviewCancel"
+                            Content="Annuler"
+                            CornerRadius="6"
+                            Foreground="#F4EFE7" />
+                        <Button
+                            x:Name="PreviewExportButton"
+                            Padding="18,8"
+                            AutomationProperties.Name="Lancer l'export de la Story"
+                            Background="#E39A5C"
+                            BorderThickness="0"
+                            Click="OnPreviewStartExport"
+                            Content="Exporter"
+                            CornerRadius="6"
+                            Foreground="#241407"
+                            IsEnabled="False" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Border>
+
+        <!-- Progression de l'export, avec annulation explicite. -->
+        <Border
+            x:Name="ExportPanel"
+            Grid.RowSpan="3"
+            AutomationProperties.Name="Progression de l'export"
+            Background="#CC000000"
+            Visibility="Collapsed">
+            <Border
+                Width="380"
+                Padding="22"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="#F20E0D0C"
+                BorderBrush="#3DF4EFE7"
+                BorderThickness="1"
+                CornerRadius="10"
+                RequestedTheme="Dark">
+                <StackPanel Spacing="12">
+                    <TextBlock
+                        x:Name="ExportTitle"
+                        FontSize="16"
+                        Foreground="#F4EFE7"
+                        Text="Export de la Story" />
+                    <ProgressBar x:Name="ExportProgress" Maximum="100" />
+                    <TextBlock
+                        x:Name="ExportStatus"
+                        AutomationProperties.LiveSetting="Polite"
+                        FontSize="12"
+                        Foreground="#B0A79A"
+                        Text="Préparation…"
+                        TextWrapping="Wrap" />
+                    <Button
+                        x:Name="ExportCancelButton"
+                        Padding="14,6"
+                        HorizontalAlignment="Right"
+                        AutomationProperties.Name="Annuler l'export en cours"
+                        Background="#1C1917"
+                        BorderBrush="#4DF4EFE7"
+                        BorderThickness="1"
+                        Click="OnCancelExport"
+                        Content="Annuler l'export"
+                        CornerRadius="6"
+                        Foreground="#F4EFE7" />
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </UserControl>
 
