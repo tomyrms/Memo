@@ -148,6 +148,18 @@ public sealed class AppState
         }
     }
 
+    /// <summary>
+    /// Mémorise l'espace source actif. Le choix sert de valeur par défaut aux
+    /// imports suivants et reste préféré lors d'un rechargement de la bibliothèque.
+    /// </summary>
+    public void SelectSpace(long spaceId)
+    {
+        if (spaceId > 0 && Spaces.Any(space => space.Id == spaceId))
+        {
+            CurrentSpaceId = spaceId;
+        }
+    }
+
     public async Task ReloadAsync(CancellationToken ct = default)
     {
         var library = Library;

@@ -12,6 +12,7 @@
             <StackPanel Spacing="4">
                 <TextBlock Text="Imports" Style="{StaticResource MemoTitleTextStyle}" />
                 <TextBlock
+                    x:Name="IntroText"
                     Style="{StaticResource MemoSecondaryTextStyle}"
                     Text="Ajoutez les ZIP d'un même export, dans l'ordre que vous voulez. Les archives suivantes complètent la bibliothèque sans effacer vos choix." />
             </StackPanel>
@@ -21,7 +22,35 @@
                 IsClosable="True"
                 IsOpen="False" />
 
-            <Border Style="{StaticResource MemoCardBorderStyle}" Padding="16">
+            <!-- Premier lancement : sans bibliothèque, l'écran ne propose pas un
+                 import impossible mais les deux actions qui débloquent le parcours. -->
+            <Border
+                x:Name="NoLibraryPanel"
+                Style="{StaticResource MemoCardBorderStyle}"
+                Padding="16"
+                Visibility="Collapsed">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Aucune bibliothèque ouverte" Style="{StaticResource MemoSubtitleTextStyle}" />
+                    <TextBlock
+                        Style="{StaticResource MemoSecondaryTextStyle}"
+                        Text="Memo range les souvenirs dans un dossier de votre ordinateur. Créez une bibliothèque pour commencer, ou ouvrez celle que vous utilisez déjà. Vous pourrez ensuite y ajouter vos archives." />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            Click="OnCreateLibrary"
+                            Content="Créer une bibliothèque"
+                            Style="{StaticResource MemoPrimaryButtonStyle}" />
+                        <Button
+                            Click="OnOpenLibrary"
+                            Content="Ouvrir une bibliothèque"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border
+                x:Name="SpacePanel"
+                Style="{StaticResource MemoCardBorderStyle}"
+                Padding="16">
                 <StackPanel Spacing="12">
                     <TextBlock Text="Espace source" Style="{StaticResource MemoSectionTextStyle}" />
                     <Grid ColumnSpacing="8">
@@ -32,6 +61,7 @@
                         <ComboBox
                             x:Name="SpaceBox"
                             HorizontalAlignment="Stretch"
+                            SelectionChanged="OnSpaceChanged"
                             Style="{StaticResource MemoComboBoxStyle}" />
                         <Button
                             Grid.Column="1"
@@ -46,6 +76,7 @@
             </Border>
 
             <Border
+                x:Name="ArchivePanel"
                 AllowDrop="True"
                 Background="{ThemeResource MemoSurfaceBrush}"
                 BorderBrush="{ThemeResource MemoBorderBrush}"
