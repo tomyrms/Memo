@@ -1,0 +1,103 @@
+﻿MEMO — MENTIONS ET LICENCES DES COMPOSANTS TIERS
+Version 0.1.0 — 30 octobre 2026
+
+Ce fichier accompagne l'application Memo. Il décrit les composants tiers
+distribués avec elle et renvoie aux textes de licence complets présents dans
+ce dossier. Il ne constitue pas la licence du code Memo lui-même.
+
+1. LICENCE DU CODE MEMO
+
+Le code Memo n'a pas encore de licence de diffusion arrêtée.
+Statut : « licence à définir avant diffusion ».
+Aucune licence open source ou propriétaire n'est accordée sur le code Memo par
+ce fichier. Les composants tiers restent régis par leurs licences respectives.
+
+2. COMPOSANTS DISTRIBUÉS
+
+Composant                     Version        Licence                    Titulaire / lien
+------------------------------------------------------------------------------------------------
+Windows App SDK              1.8.260921001  MIT (code source) ;        Microsoft Corporation
+                                            binaires selon les termes  https://github.com/microsoft/WindowsAppSDK
+                                            Microsoft
+.NET Runtime                 10.0           MIT                        .NET Foundation and Contributors
+                                                                       https://github.com/dotnet/runtime
+SkiaSharp                    4.154.0        MIT                        Copyright (c) 2015-2016 Xamarin, Inc.
+SkiaSharp.Views.WinUI        4.154.0        MIT                        Copyright (c) 2017-2018 Microsoft Corporation
+SkiaSharp.NativeAssets.Win32 4.154.0        MIT                        https://github.com/mono/SkiaSharp
+Microsoft.Data.Sqlite        10.0.14        MIT                        Copyright (c) .NET Foundation and Contributors
+                                                                       https://github.com/dotnet/efcore
+SQLite (moteur natif)        3.x            Domaine public             https://www.sqlite.org/copyright.html
+SQLitePCLRaw                2.1.13         Apache-2.0                 Copyright 2014-2024 SourceGear, LLC
+                                                                       https://github.com/ericsink/SQLitePCL.raw
+LibVLCSharp                 3.10.2         LGPL-2.1-or-later          VideoLAN
+                                                                       https://code.videolan.org/videolan/LibVLCSharp
+LibVLC                      3.0.24         LGPL-2.1-or-later          VideoLAN and VLC authors
+                                                                       https://www.videolan.org/vlc/
+CommunityToolkit.Mvvm       8.4.2          MIT                        Copyright (c) .NET Foundation and Contributors
+                                                                       https://github.com/CommunityToolkit/dotnet
+
+Composants de développement non distribués : Microsoft.Windows.SDK.BuildTools,
+MSTest et les analyseurs de build ne sont pas inclus dans l'installateur.
+
+3. TEXTES DE LICENCE
+
+Les textes complets fournis dans ce dossier sont :
+
+  LICENSES/MIT.txt
+      Licence MIT, applicable notamment à .NET, SkiaSharp, Microsoft.Data.Sqlite,
+      CommunityToolkit.Mvvm et au code source de Windows App SDK.
+
+  LICENSES/LGPL-2.1.txt
+      GNU Lesser General Public License, version 2.1, février 1999.
+      Applicable à LibVLCSharp et LibVLC.
+
+  LICENSES/Apache-2.0.txt
+      Apache License, version 2.0, janvier 2004.
+      Applicable à SQLitePCLRaw.
+
+  LICENSES/Microsoft-WindowsAppSDK.txt
+      Termes de licence du paquet NuGet Microsoft.WindowsAppSDK.
+      Ils régissent la redistribution des binaires Windows App SDK.
+
+  LICENSES/WindowsAppSDK-NOTICE.txt
+      Avis de composants tiers du paquet Windows App SDK, notamment
+      Newtonsoft.Json 13.0.1 (MIT).
+
+Liens officiels :
+  MIT                    https://opensource.org/license/mit
+  LGPL-2.1               https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+  Apache-2.0             https://www.apache.org/licenses/LICENSE-2.0
+  Windows App SDK        https://github.com/microsoft/WindowsAppSDK
+  SkiaSharp              https://github.com/mono/SkiaSharp
+  Microsoft.Data.Sqlite  https://learn.microsoft.com/dotnet/standard/data/sqlite/
+  SQLite                 https://www.sqlite.org/copyright.html
+  LibVLCSharp            https://code.videolan.org/videolan/LibVLCSharp
+  LibVLC / VLC           https://www.videolan.org/
+  CommunityToolkit.Mvvm  https://github.com/CommunityToolkit/dotnet
+
+4. CONFORMITÉ LGPL POUR LIBVLC
+
+LibVLCSharp et LibVLC sont distribués sous LGPL-2.1-or-later.
+
+  - Les DLL natives LibVLC sont installées comme fichiers séparés dans
+    <dossier d'installation>\libvlc\win-x64 (par défaut
+    %LOCALAPPDATA%\Programs\Memo\libvlc\win-x64). Elles ne sont pas liées
+    statiquement à Memo et ne sont pas modifiées par le projet.
+  - L'utilisateur peut remplacer ces DLL par une version compatible, dans la
+    mesure où l'interface binaire reste compatible avec LibVLCSharp 3.10.2.
+  - Le code source de LibVLCSharp 3.10.2 est publié par VideoLAN :
+    https://code.videolan.org/videolan/LibVLCSharp
+  - Le code source de LibVLC 3.0.24 est publié par VideoLAN :
+    https://code.videolan.org/videolan/vlc
+  - Le texte de la LGPL 2.1 est fourni dans LICENSES/LGPL-2.1.txt.
+  - Les binaires LibVLC incluent des modules et bibliothèques tiers fournis par
+    VideoLAN. Le fichier COPYING de la distribution VLC décrit leur situation :
+    https://code.videolan.org/videolan/vlc/-/blob/master/COPYING
+
+Aucune modification n'est apportée aux DLL LibVLC distribuées.
+
+5. MARQUES ET AFFILIATION
+
+Memo est un projet indépendant, sans affiliation avec Snapchat ou Snap.
+Les noms et marques de tiers appartiennent à leurs titulaires respectifs et
+sont utilisés uniquement pour décrire l'origine des composants.

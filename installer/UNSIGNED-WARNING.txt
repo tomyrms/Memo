@@ -1,0 +1,24 @@
+﻿MEMO 0.1.0 — INSTALLATEUR NON SIGNÉ
+
+Cet installateur ne porte pas de signature de code. Windows ne peut donc pas
+vérifier son éditeur et SmartScreen peut afficher un avertissement, par exemple :
+
+    « Windows a protégé votre PC »
+    ou « Windows Defender SmartScreen a empêché le démarrage d'une application
+    non reconnue ».
+
+Pour poursuivre si vous faites confiance au fichier :
+    1. Cliquez sur « Informations complémentaires ».
+    2. Cliquez sur « Exécuter quand même ».
+
+Avant d'installer, comparez l'empreinte SHA-256 du fichier avec celle publiée
+avec la version. Sous PowerShell :
+
+    Get-FileHash .\Memo-0.1.0-win-x64-setup.exe -Algorithm SHA256
+
+L'installation se fait dans votre profil utilisateur, sans élévation :
+    %LOCALAPPDATA%\Programs\Memo
+
+Aucun mot de passe ni compte n'est demandé. L'application n'envoie pas vos
+médias à un service distant. La page suivante de l'installateur rappelle que
+vos bibliothèques ne sont pas supprimées lors d'une désinstallation.

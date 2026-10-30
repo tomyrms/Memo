@@ -1,0 +1,132 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+jobs:
+  build:
+    name: Build et tests (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restaurer les packages
+        run: dotnet restore Memo.slnx
+
+      - name: Compiler la solution
+        run: dotnet build Memo.slnx -c Release --no-restore
+
+      - name: Tests Memo.Core
+        run: dotnet test tests/Memo.Core.Tests/Memo.Core.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+      - name: Tests Memo.Media
+        run: dotnet test tests/Memo.Media.Tests/Memo.Media.Tests.csproj -c Release --no-build --logger "console;verbosity=normal"
+
+      - name: Publier Memo en win-x64 auto-contenu
+        run: dotnet publish src/Memo.App/Memo.App.csproj -c Release -r win-x64 --self-contained -p:PublishReadyToRun=false -o artifacts/publish
+
+      - name: Alléger l'artefact de publication
+        shell: pwsh
+        run: |
+          Remove-Item artifacts/publish/libvlc/win-arm64 -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item artifacts/publish/libvlc/win-x86 -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem artifacts/publish -Recurse -File |
+            Where-Object { $_.Extension -in '.pdb', '.lib' } |
+            Remove-Item -Force
+          $files = Get-ChildItem artifacts/publish -Recurse -File
+          $sizeMb = [math]::Round((($files | Measure-Object Length -Sum).Sum / 1MB), 1)
+          Write-Host "$($files.Count) fichiers, $sizeMb Mo"
+
+      - name: Téléverser la publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: memo-win-x64
+          path: artifacts/publish
+          if-no-files-found: error
+          retention-days: 14
+
+  installer:
+    name: Installateur Windows (non signé)
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Télécharger la publication
+        uses: actions/download-artifact@v4
+        with:
+          name: memo-win-x64
+          path: artifacts/publish
+
+      - name: Vérifier la disponibilité d'Inno Setup
+        id: inno
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host '::warning::Inno Setup n''a pas pu être installé ; compilation ignorée.'
+            'available=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          $candidates = @(
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe',
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+          )
+          $iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            $iscc = (Get-Command 'ISCC.exe' -CommandType Application -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $iscc) {
+            Write-Host '::warning::ISCC.exe introuvable après installation ; compilation ignorée.'
+            'available=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            exit 0
+          }
+
+          Write-Host "ISCC trouvé : $iscc"
+          'available=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Compiler l'installateur
+        if: steps.inno.outputs.available == 'true'
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -SkipPublish
+
+      - name: Téléverser l'installateur
+        if: steps.inno.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: memo-installer-win-x64
+          path: |
+            artifacts/Memo-*-win-x64-setup.exe
+            artifacts/Memo-*-win-x64-setup.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
