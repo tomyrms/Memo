@@ -120,15 +120,94 @@ public sealed partial class ImportsPage : Page
         UpdateSelection();
     }
 
+    private long _stagedBytes;
+    private int _stagedArchives;
+
     private void UpdateSelection()
     {
         SelectionPanel.Visibility = _staged.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        SelectionTitle.Text = _staged.Count == 1 ? "1 archive sélectionnée" : $"{_staged.Count} archives sélectionnées";
-        SelectionList.ItemsSource = _staged.Select(p => new
+        var rows = new List<object>();
+        _stagedBytes = 0;
+        _stagedArchives = 0;
+
+        foreach (var path in _staged)
         {
-            Name = Path.GetFileName(p.TrimEnd('\\')),
-            Detail = Directory.Exists(p) ? "Dossier" : FormatSize(new FileInfo(p).Length)
-        }).ToList();
+            if (Directory.Exists(path))
+            {
+                var archives = Directory
+                    .EnumerateFiles(path, "*.zip", SearchOption.TopDirectoryOnly)
+                    .OrderBy(file => file, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                var size = archives.Sum(file => new FileInfo(file).Length);
+                _stagedBytes += size;
+                _stagedArchives += archives.Count;
+                rows.Add(new
+                {
+                    Name = Path.GetFileName(path.TrimEnd('\\')),
+                    Detail = $"{archives.Count} archive(s) · {FormatSize(size)}"
+                });
+            }
+            else if (File.Exists(path))
+            {
+                var size = new FileInfo(path).Length;
+                _stagedBytes += size;
+                _stagedArchives++;
+                rows.Add(new
+                {
+                    Name = Path.GetFileName(path),
+                    Detail = FormatSize(size)
+                });
+            }
+        }
+
+        SelectionList.ItemsSource = rows;
+        SelectionTitle.Text = _stagedArchives == 1
+            ? "1 archive sélectionnée"
+            : $"{_stagedArchives} archives sélectionnées";
+        SelectionSummary.Text = $"{_stagedArchives} archive(s) · {FormatSize(_stagedBytes)}";
+
+        var free = GetFreeSpaceOnLibraryDrive();
+        if (free is long available && _stagedBytes > 0)
+        {
+            var required = (long)(_stagedBytes * 1.15) + 1_000_000_000;
+            if (required > available)
+            {
+                SelectionWarning.Text =
+                    $"Espace insuffisant sur le disque de la bibliothèque : {FormatSize(available)} libres, " +
+                    $"environ {FormatSize(required)} nécessaires. Choisissez une bibliothèque sur un autre disque.";
+                SelectionWarning.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                SelectionWarning.Visibility = Visibility.Collapsed;
+            }
+        }
+        else
+        {
+            SelectionWarning.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private static long? GetFreeSpaceOnLibraryDrive()
+    {
+        try
+        {
+            var root = AppState.Current.LibraryPath;
+            if (string.IsNullOrEmpty(root))
+            {
+                return null;
+            }
+            var driveRoot = Path.GetPathRoot(root);
+            if (string.IsNullOrEmpty(driveRoot))
+            {
+                return null;
+            }
+            return new DriveInfo(driveRoot).AvailableFreeSpace;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string FormatSize(long bytes)
@@ -169,6 +248,21 @@ public sealed partial class ImportsPage : Page
             Notice.Severity = InfoBarSeverity.Warning;
             Notice.IsOpen = true;
             return;
+        }
+
+        var free = GetFreeSpaceOnLibraryDrive();
+        if (free is long available && _stagedBytes > 0)
+        {
+            var required = (long)(_stagedBytes * 1.15) + 1_000_000_000;
+            if (required > available)
+            {
+                Notice.Title = "Espace disque insuffisant";
+                Notice.Message = $"Il reste {FormatSize(available)} sur le disque de la bibliothèque, " +
+                                 $"mais environ {FormatSize(required)} sont nécessaires. Créez une bibliothèque sur un autre disque.";
+                Notice.Severity = InfoBarSeverity.Error;
+                Notice.IsOpen = true;
+                return;
+            }
         }
 
         var spaceId = (SpaceBox.SelectedItem as ComboBoxItem)?.Tag as long? ?? AppState.Current.CurrentSpaceId;
@@ -342,5 +436,6 @@ public sealed partial class ImportsPage : Page
         HistoryEmpty.Text = "Aucun import enregistré.";
     }
 }
+
 
 

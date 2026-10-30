@@ -33,6 +33,8 @@ memories/<UUID>-overlay.png   (PNG ou WebP, malgré l'extension)
 
 Il ne suppose pas que tous les exports Snapchat utilisent ce format. Les index HTML/JSON à liens distants ne sont pas activés tant qu'un exemple réel n'a pas été validé ; aucun téléchargement réseau n'est effectué.
 
+Un export volumineux peut être livré en **plusieurs archives** (`mydata_<horodatage>.zip`, `-1.zip`, `-2.zip`, …). Sélectionnez le dossier qui les contient : Memo les importe en un seul lot et associe les médias, calques et métadonnées entre les parties.
+
 ## Fonctionnalités
 
 - **Import multi-ZIP** avec reprise, idempotence, espaces sources séparés, diagnostics par élément.

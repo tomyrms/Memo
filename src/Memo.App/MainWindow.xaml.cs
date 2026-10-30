@@ -249,8 +249,14 @@ public sealed partial class MainWindow : Window
 
         // La taille minimale doit tenir sur le plus petit écran connecté, sinon la
         // fenêtre ne pourrait pas être ramenée entièrement dans sa zone utile.
-        var smallestWidth = displays.Count > 0 ? displays.Min(area => area.WorkArea.Width) : work.Width;
-        var smallestHeight = displays.Count > 0 ? displays.Min(area => area.WorkArea.Height) : work.Height;
+        var smallestWidth = work.Width;
+        var smallestHeight = work.Height;
+        for (var i = 0; i < displays.Count; i++)
+        {
+            var area = displays[i];
+            smallestWidth = Math.Min(smallestWidth, area.WorkArea.Width);
+            smallestHeight = Math.Min(smallestHeight, area.WorkArea.Height);
+        }
         var minWidth = Math.Min(Math.Max(320, (int)Math.Round(MinimumWidth * scale)), smallestWidth);
         var minHeight = Math.Min(Math.Max(240, (int)Math.Round(MinimumHeight * scale)), smallestHeight);
         ApplyMinimumSize(minWidth, minHeight);
@@ -308,8 +314,10 @@ public sealed partial class MainWindow : Window
     {
         DisplayArea? best = null;
         long bestOverlap = 0;
-        foreach (var area in DisplayArea.FindAll())
+        var displays = DisplayArea.FindAll();
+        for (var i = 0; i < displays.Count; i++)
         {
+            var area = displays[i];
             var work = area.WorkArea;
             var left = Math.Max(bounds.X, work.X);
             var top = Math.Max(bounds.Y, work.Y);
@@ -458,3 +466,5 @@ public sealed partial class MainWindow : Window
         public int Height { get; set; }
     }
 }
+
+
