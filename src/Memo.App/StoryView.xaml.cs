@@ -116,6 +116,7 @@ public sealed partial class StoryView : UserControl
             }
         }
 
+        Stage.Mute = _muted;
         EnsureTimer();
     }
 
@@ -384,7 +385,11 @@ public sealed partial class StoryView : UserControl
     {
         _muted = !_muted;
         Stage.Mute = _muted;
+        MuteIcon.Glyph = _muted ? "\\uE74F" : "\\uE767";
         MuteButton.Opacity = _muted ? 0.55 : 1;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(
+            MuteButton,
+            _muted ? "Rétablir le son" : "Couper le son");
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();
@@ -429,5 +434,6 @@ public sealed partial class StoryView : UserControl
         }
     }
 }
+
 
 

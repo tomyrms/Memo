@@ -148,7 +148,7 @@ public sealed class MediaStage : UserControl
 
         LibVLCSharp.Shared.Core.Initialize();
         _libVlc = new LibVLC("--no-video-title-show", "--quiet", "--avcodec-hw=none");
-        _player = new MediaPlayer(_libVlc);
+        _player = new MediaPlayer(_libVlc) { Volume = 100, Mute = false };
         _player.EndReached += OnEndReached;
         _player.SetVideoFormatCallbacks(
             new MediaPlayer.LibVLCVideoFormatCb(OnFormat),
@@ -344,6 +344,7 @@ public sealed class MediaStage : UserControl
         }
     }
 }
+
 
 
 

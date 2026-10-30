@@ -143,6 +143,7 @@
                     CornerRadius="20"
                     ToolTipService.ToolTip="Couper le son (M)">
                     <FontIcon
+                        x:Name="MuteIcon"
                         FontSize="16"
                         Foreground="#F4EFE7"
                         Glyph="&#xE767;" />
@@ -205,6 +206,7 @@
         </Grid>
     </Grid>
 </UserControl>
+
 
 
 
