@@ -26,6 +26,7 @@ public interface IMemoCatalog
     Task SetDateOverrideAsync(long memoryId, DateOnly? localDate, DatePrecision precision, string? note = null, CancellationToken ct = default);
     Task SetLocationAsync(long memoryId, double? latitude, double? longitude, string? label, CancellationToken ct = default);
     Task SetThumbnailAsync(long memoryId, string? relativePath, CancellationToken ct = default);
+    Task RecalculateClassificationAsync(string timeZoneId, CancellationToken ct = default);
 
     Task<IReadOnlyList<YearSummary>> GetYearSummariesAsync(CancellationToken ct = default);
     Task<IReadOnlyList<MonthSummary>> GetMonthSummariesAsync(int? year = null, CancellationToken ct = default);
