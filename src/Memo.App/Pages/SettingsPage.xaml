@@ -268,12 +268,77 @@
                 <StackPanel Spacing="12">
                     <TextBlock Text="Sauvegarde et restauration" Style="{StaticResource MemoSectionTextStyle}" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Click="OnBackup" Content="Sauvegarder la bibliothèque" Style="{StaticResource MemoSecondaryButtonStyle}" />
-                        <Button Click="OnRestore" Content="Restaurer une sauvegarde" Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        <Button
+                            x:Name="BackupButton"
+                            Click="OnBackup"
+                            Content="Sauvegarder la bibliothèque"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                        <Button
+                            x:Name="RestoreButton"
+                            Click="OnRestore"
+                            Content="Restaurer une sauvegarde"
+                            Style="{StaticResource MemoSecondaryButtonStyle}" />
+                    </StackPanel>
+                    <StackPanel
+                        x:Name="BackupProgressPanel"
+                        Spacing="6"
+                        Visibility="Collapsed">
+                        <ProgressBar
+                            x:Name="BackupProgressBar"
+                            Maximum="100"
+                            Value="0" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                x:Name="BackupStatus"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource MemoCaptionTextStyle}"
+                                TextWrapping="Wrap" />
+                            <Button
+                                x:Name="CancelBackupButton"
+                                Grid.Column="1"
+                                Click="OnCancelBackup"
+                                Content="Annuler"
+                                Style="{StaticResource MemoQuietButtonStyle}" />
+                        </Grid>
                     </StackPanel>
                     <TextBlock
                         Style="{StaticResource MemoCaptionTextStyle}"
-                        Text="La sauvegarde contient le catalogue, les médias sources, les albums, les favoris, les exclusions et les dates corrigées. Les caches reconstructibles sont exclus." />
+                        Text="La sauvegarde contient le catalogue, les médias sources, les albums, les favoris, les exclusions et les dates corrigées. Les caches reconstructibles sont exclus. Une sauvegarde ou une restauration annulée ne laisse aucun fichier partiel sous son nom final." />
+                </StackPanel>
+            </Border>
+
+            <Border
+                x:Name="ThumbnailCard"
+                Style="{StaticResource MemoCardBorderStyle}"
+                Padding="16"
+                Visibility="Collapsed">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Aperçus" Style="{StaticResource MemoSectionTextStyle}" />
+                    <TextBlock
+                        x:Name="ThumbnailStatus"
+                        Style="{StaticResource MemoCaptionTextStyle}"
+                        TextWrapping="Wrap" />
+                    <ProgressBar
+                        x:Name="ThumbnailProgressBar"
+                        Maximum="1"
+                        Value="0" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            x:Name="CancelThumbnailsButton"
+                            Click="OnCancelThumbnails"
+                            Content="Annuler la reconstruction"
+                            Style="{StaticResource MemoQuietButtonStyle}" />
+                        <Button
+                            x:Name="RetryThumbnailsButton"
+                            Click="OnRetryThumbnails"
+                            Content="Reprendre"
+                            Style="{StaticResource MemoSecondaryButtonStyle}"
+                            Visibility="Collapsed" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

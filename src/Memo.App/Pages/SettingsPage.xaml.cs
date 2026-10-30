@@ -18,8 +18,22 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
-        Loaded += (_, _) => Initialize();
+        Loaded += OnPageLoaded;
+        Unloaded += OnPageUnloaded;
     }
+
+    private void OnPageLoaded(object sender, RoutedEventArgs e)
+    {
+        // La page est mise en cache : se réabonner à chaque affichage évite les
+        // doubles abonnements après une navigation.
+        AppState.Current.ThumbnailGenerationChanged -= OnThumbnailGenerationChanged;
+        AppState.Current.ThumbnailGenerationChanged += OnThumbnailGenerationChanged;
+        Initialize();
+        ApplyThumbnailState(AppState.Current.ThumbnailGeneration);
+    }
+
+    private void OnPageUnloaded(object sender, RoutedEventArgs e)
+        => AppState.Current.ThumbnailGenerationChanged -= OnThumbnailGenerationChanged;
 
     private void Initialize()
     {
@@ -71,6 +85,7 @@ public sealed partial class SettingsPage : Page
         UpdateReminderControls();
         _ = UpdateReminderStatusAsync();
         _ = RefreshAnalysisDataAsync();
+        ApplyThumbnailState(AppState.Current.ThumbnailGeneration);
     }
 
     private void UpdateReminderControls()
@@ -600,8 +615,16 @@ public sealed partial class SettingsPage : Page
         }
     }
 
+    private CancellationTokenSource? _backupCts;
+    private bool _backupBusy;
+
     private async void OnBackup(object sender, RoutedEventArgs e)
     {
+        if (_backupBusy)
+        {
+            return;
+        }
+
         if (AppState.Current.IsDemo)
         {
             Show("Aucune bibliothèque", "Créez ou ouvrez une bibliothèque avant de la sauvegarder.", InfoBarSeverity.Warning);
@@ -621,20 +644,50 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
+        using var cts = new CancellationTokenSource();
+        _backupCts = cts;
+        SetBackupBusy(true, "Préparation de la sauvegarde…");
+        var succeeded = false;
         try
         {
-            Show("Sauvegarde en cours", "Le catalogue et les médias sources sont copiés.", InfoBarSeverity.Informational);
-            var path = await AppState.Current.BackupAsync(file.Path);
+            var path = await AppState.Current.BackupAsync(
+                file.Path,
+                CreateBackupProgress(),
+                cts.Token);
+            succeeded = true;
             Show("Sauvegarde terminée", $"Archive créée : {path}", InfoBarSeverity.Success);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            Show(
+                "Sauvegarde annulée",
+                "L'archive en cours d'écriture a été supprimée. Aucun fichier partiel ne porte le nom de la sauvegarde demandée.",
+                InfoBarSeverity.Warning);
         }
         catch (Exception ex)
         {
             Show("Sauvegarde impossible", ex.Message, InfoBarSeverity.Error);
         }
+        finally
+        {
+            // Le sélecteur Windows peut avoir créé un fichier vide : ne pas le
+            // laisser passer pour une sauvegarde exploitable.
+            if (!succeeded)
+            {
+                TryDeleteEmptyFile(file.Path);
+            }
+            _backupCts = null;
+            SetBackupBusy(false);
+        }
     }
 
     private async void OnRestore(object sender, RoutedEventArgs e)
     {
+        if (_backupBusy)
+        {
+            return;
+        }
+
         var open = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
         open.FileTypeFilter.Add(".zip");
         WinRT.Interop.InitializeWithWindow.Initialize(open, WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindow));
@@ -655,12 +708,26 @@ public sealed partial class SettingsPage : Page
 
         var target = Path.Combine(parent.Path, $"Memo-restaure-{DateTime.Now:yyyyMMdd-HHmmss}");
 
-        // La restauration ne dépend pas de la bibliothèque ouverte : elle reste
-        // disponible au premier lancement, en mode démonstration.
+        using var cts = new CancellationTokenSource();
+        _backupCts = cts;
+        SetBackupBusy(true, "Préparation de la restauration…");
         try
         {
-            Show("Restauration en cours", "La sauvegarde est vérifiée puis extraite dans un dossier vide.", InfoBarSeverity.Informational);
-            await AppState.Current.RestoreAsync(file.Path, target);
+            // La restauration ne dépend pas de la bibliothèque ouverte : elle reste
+            // disponible au premier lancement, en mode démonstration.
+            await AppState.Current.RestoreAsync(
+                file.Path,
+                target,
+                CreateBackupProgress(),
+                cts.Token);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            Show(
+                "Restauration annulée",
+                "Le dossier temporaire a été supprimé. Aucune bibliothèque partielle n'a été créée sous le nom final.",
+                InfoBarSeverity.Warning);
+            return;
         }
         catch (Exception ex)
         {
@@ -668,14 +735,23 @@ public sealed partial class SettingsPage : Page
             Show("Restauration impossible", ex.Message, InfoBarSeverity.Error);
             return;
         }
+        finally
+        {
+            _backupCts = null;
+            SetBackupBusy(false);
+        }
 
         try
         {
             // L'ouverture bascule seulement si la bibliothèque restaurée est
-            // entièrement lisible ; sinon l'ancienne reste active.
+            // entièrement lisible ; sinon l'ancienne reste active. Elle lance
+            // ensuite la reconstruction des aperçus en arrière-plan.
             await AppState.Current.OpenLibraryAsync(target);
             Initialize();
-            Show("Restauration terminée", $"{AppState.Current.Cards.Count} souvenir(s) restaurés dans {target}.", InfoBarSeverity.Success);
+            Show(
+                "Restauration terminée",
+                $"{AppState.Current.Cards.Count} souvenir(s) restaurés dans {target}. Les aperçus manquants sont reconstruits en arrière-plan.",
+                InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
@@ -684,6 +760,117 @@ public sealed partial class SettingsPage : Page
                 InfoBarSeverity.Warning);
         }
     }
+
+    private void SetBackupBusy(bool busy, string? initialMessage = null)
+    {
+        _backupBusy = busy;
+        BackupButton.IsEnabled = !busy;
+        RestoreButton.IsEnabled = !busy;
+        CancelBackupButton.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        CancelBackupButton.IsEnabled = busy;
+        BackupProgressPanel.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        if (busy)
+        {
+            BackupProgressBar.Value = 0;
+            BackupStatus.Text = initialMessage ?? string.Empty;
+        }
+    }
+
+    private IProgress<BackupProgress> CreateBackupProgress()
+        => new Progress<BackupProgress>(progress =>
+        {
+            BackupProgressBar.Value = Math.Round(progress.Fraction * 100);
+            var percent = $"{Math.Round(progress.Fraction * 100)} %";
+            var files = progress.FilesTotal > 0
+                ? $" · {progress.FilesDone}/{progress.FilesTotal} fichier(s)"
+                : string.Empty;
+            var bytes = progress.BytesTotal > 0
+                ? $" · {FormatBytes(progress.BytesDone)} / {FormatBytes(progress.BytesTotal)}"
+                : string.Empty;
+            BackupStatus.Text = $"{percent} · {progress.Message}{files}{bytes}";
+        });
+
+    private void OnCancelBackup(object sender, RoutedEventArgs e)
+    {
+        if (_backupCts is null)
+        {
+            return;
+        }
+
+        CancelBackupButton.IsEnabled = false;
+        BackupStatus.Text = "Annulation demandée…";
+        _backupCts.Cancel();
+    }
+
+    private void OnThumbnailGenerationChanged(object? sender, ThumbnailGenerationInfo state)
+        => ApplyThumbnailState(state);
+
+    private void ApplyThumbnailState(ThumbnailGenerationInfo state)
+    {
+        // La carte n'apparaît que lorsqu'il y a réellement des aperçus à traiter
+        // (ou qu'une reconstruction a été interrompue).
+        var visible = state.IsRunning || state.Total > 0 || state.Failed;
+        ThumbnailCard.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        if (!visible)
+        {
+            return;
+        }
+
+        ThumbnailProgressBar.IsIndeterminate = state.IsRunning && state.Total == 0;
+        ThumbnailProgressBar.Maximum = Math.Max(1, state.Total);
+        ThumbnailProgressBar.Value = Math.Clamp(state.Done, 0, Math.Max(1, state.Total));
+        var suffix = state.Total > 0 ? $" ({state.Done}/{state.Total})" : string.Empty;
+        ThumbnailStatus.Text = state.Message + suffix;
+        CancelThumbnailsButton.Visibility = state.IsRunning ? Visibility.Visible : Visibility.Collapsed;
+        CancelThumbnailsButton.IsEnabled = state.IsRunning;
+        RetryThumbnailsButton.Visibility = !state.IsRunning && state.Total > 0
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    private void OnCancelThumbnails(object sender, RoutedEventArgs e)
+    {
+        CancelThumbnailsButton.IsEnabled = false;
+        ThumbnailStatus.Text = "Annulation demandée…";
+        AppState.Current.CancelThumbnailGeneration();
+    }
+
+    private void OnRetryThumbnails(object sender, RoutedEventArgs e)
+        => AppState.Current.RetryThumbnailGeneration();
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = { "o", "Ko", "Mo", "Go", "To" };
+        double value = bytes;
+        var unit = 0;
+        while (value >= 1024 && unit < units.Length - 1)
+        {
+            value /= 1024;
+            unit++;
+        }
+
+        return unit == 0 ? $"{bytes} o" : $"{value:0.#} {units[unit]}";
+    }
+
+    private static void TryDeleteEmptyFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path) && new FileInfo(path).Length == 0)
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            // Nettoyage best-effort.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Nettoyage best-effort.
+        }
+    }
+
     private async void OnOpenLicenses(object sender, RoutedEventArgs e)
     {
         var text = "Memo 0.1.0\n\n" +
