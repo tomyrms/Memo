@@ -119,11 +119,22 @@ public sealed partial class ImportService : IImportService
             }
 
             var total = 0;
-            foreach (var input in inputList)
+            // Donne une progression pendant l'inventaire, qui peut être long
+            // lorsqu'une archive doit être hydratée depuis un dossier cloud.
+            reporter.FilesTotal = inputList.Count;
+            for (var index = 0; index < inputList.Count; index++)
             {
+                var input = inputList[index];
+                reporter.Report(
+                    ImportPhase.Scanning,
+                    $"Inventaire {index + 1}/{inputList.Count} : {Path.GetFileName(input.Path)}",
+                    input.Path,
+                    force: true);
                 total += await CountEntriesAsync(input, ct).ConfigureAwait(false);
+                reporter.FilesProcessed = index + 1;
             }
 
+            reporter.FilesProcessed = 0;
             reporter.FilesTotal = total;
             reporter.Report(
                 ImportPhase.Reading,

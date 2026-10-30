@@ -485,7 +485,14 @@ public sealed class AppState
             library.Info.RootPath,
             LibraryOperationKind.Import);
 
-        var result = await library.Import.RunAsync(new ImportRequest(spaceId, paths), progress, ct);
+        var request = new ImportRequest(spaceId, paths);
+        // L'inventaire des ZIP et la lecture des entrées sont synchrones dans
+        // ZipArchive. Sur un dossier cloud (Proton Drive, OneDrive), ouvrir une
+        // archive peut déclencher un téléchargement : exécuter l'import hors du
+        // fil UI évite une fenêtre figée qui ressemble à un plantage.
+        var result = await Task.Run(
+            () => library.Import.RunAsync(request, progress, ct),
+            ct);
         if (!IsCurrent(library, epoch))
         {
             // L'import s'est terminé après un changement de bibliothèque :

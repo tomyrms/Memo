@@ -446,6 +446,10 @@ public sealed partial class ImportsPage : Page
         ProgressBar.IsIndeterminate = true;
         ProgressTitle.Text = "Inventaire des archives";
         ProgressText.Text = "Lecture de l'archive en cours…";
+        // Le panneau vient d'être rendu visible : on attend une passe de mise en
+        // page avant de le faire défiler dans la vue.
+        DispatcherQueue.TryEnqueue(() =>
+            ProgressPanel.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true }));
 
         var progress = new Progress<ImportProgress>(UpdateProgress);
         try
@@ -528,6 +532,8 @@ public sealed partial class ImportsPage : Page
             : $"{skipped} erreur(s) de lecture ; consultez le bilan ci-dessous.";
         Notice.Severity = skipped == 0 ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
         Notice.IsOpen = true;
+        DispatcherQueue.TryEnqueue(() =>
+            ResultPanel.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true }));
     }
 
     /// <summary>
@@ -549,6 +555,7 @@ public sealed partial class ImportsPage : Page
                          "les fichiers ont peut-être été déplacés, renommés ou supprimés.";
         Notice.Severity = InfoBarSeverity.Error;
         Notice.IsOpen = true;
+        ResultPanel.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
     }
 
     private static object ToDiagnosticRow(ImportDiagnostic diagnostic) => new
