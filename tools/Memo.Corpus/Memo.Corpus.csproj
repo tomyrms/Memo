@@ -5,6 +5,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Memo.Corpus</RootNamespace>
+    <AssemblyName>Memo.Corpus</AssemblyName>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\tests\Memo.TestSupport\Memo.TestSupport.csproj" />
+  </ItemGroup>
 
 </Project>

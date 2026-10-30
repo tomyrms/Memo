@@ -7,6 +7,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Memo.Core.Tests/Memo.Core.Tests.csproj" />
     <Project Path="tests/Memo.Media.Tests/Memo.Media.Tests.csproj" />
+    <Project Path="tests/Memo.TestSupport/Memo.TestSupport.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Memo.Corpus/Memo.Corpus.csproj" />
