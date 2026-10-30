@@ -573,3 +573,16 @@ dotnet run --project <Temp>\memo-qa\harness -c Debug --no-build
 ```
 
 Aucun fichier de `src/`, `tests/`, `installer/` ni document existant n'a été modifié. Seuls `docs/qa-report.md` et `docs/manual-tests.md` sont ajoutés.
+
+## Suites données (30 octobre 2026, commit cca770f)
+
+- **QA-01** corrigé : la variante principale d'un conflit est choisie par empreinte SHA-256, indépendamment de l'ordre des archives ; test d'intégration ajusté.
+- **QA-02** corrigé : exclusions et précision de date appliquées à « Ce jour-là », « Surprends-moi » et « Une journée à redécouvrir » ; le jour courant suit le fuseau de la bibliothèque.
+- **QA-03** corrigé : les récapitulatifs enregistrés sont chargés depuis le catalogue et affichés dans l'écran Récapitulatifs.
+- **QA-04** corrigé : aucune correction de date n'est créée si la date n'a pas changé ; vider le sélecteur remet la date en inconnue.
+- **QA-05** corrigé : limites d'entrées, de taille décompressée, de taille par entrée et de ratio de compression, avec diagnostic.
+- **Provenance** corrigée dans la fiche d'un souvenir (bibliothèque réelle au lieu de « démonstration »).
+- **Son** : le lecteur démarre non muet et le bouton HP reflète l'état.
+- Les 12 tests d'intégration passent après ces changements.
+
+Restent ouverts : pluralisation « (s) », codes de diagnostic bruts, export d'une sélection non branché, provenance détaillée du second candidat de conflit, tests de machine Windows propre et de très gros volumes.

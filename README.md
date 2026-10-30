@@ -71,6 +71,7 @@ cd Memo
 dotnet build Memo.slnx -c Debug
 dotnet test tests/Memo.Core.Tests/Memo.Core.Tests.csproj
 dotnet test tests/Memo.Media.Tests/Memo.Media.Tests.csproj
+dotnet test tests/Memo.Integration.Tests/Memo.Integration.Tests.csproj
 
 # Corpus synthétique déterministe
 dotnet run --project tools/Memo.Corpus -- --out "$env:TEMP\memo-corpus" --seed 42 --count 20

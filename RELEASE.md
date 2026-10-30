@@ -32,7 +32,7 @@ Windows 10 21H2 (build 19041) ou Windows 11, x64. Installateur non signé :
 - WebP sous extension `.png` reconnu par signature.
 - Rotation appliquée une seule fois ; alignement des calques dans le repère affiché.
 - Archives corrompues, entrées `../`, conflits de rôle et médias manquants produisent un diagnostic sans bloquer l'application.
-- 39 tests Core + 69 tests Media au moment de la release.
+- 39 tests Core, 69 tests Media et 12 tests d’intégration au moment de la release.
 
 ## Limites connues
 

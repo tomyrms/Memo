@@ -29,7 +29,7 @@ Application WinUI 3 fonctionnelle sur bibliothèque réelle : import multi-ZIP, 
 
 ## Vérifications exécutées
 
-- `dotnet test` Core : 39/39 ; Media : 69/69.
+- `dotnet test` Core : 39/39 ; Media : 69/69 ; Intégration : 12/12.
 - Import du corpus : 22 souvenirs espace A + 1 espace B, 21 médias, 18 calques, 2 diagnostics, 23 cartes.
 - Analyse locale sur la bibliothèque : 13 OCR, 13 empreintes, 5,7 s.
 - Sauvegarde → restauration : 23 souvenirs retrouvés.
