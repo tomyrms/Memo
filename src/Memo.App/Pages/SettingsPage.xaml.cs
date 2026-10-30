@@ -61,6 +61,7 @@ public sealed partial class SettingsPage : Page
 
         _loading = false;
         _ = UpdateReminderStatusAsync();
+        _ = RefreshAnalysisDataAsync();
     }
 
     private static void SelectByTag(ComboBox box, string tag)
@@ -494,6 +495,7 @@ public sealed partial class SettingsPage : Page
         AnalysisProgress.Visibility = Visibility.Visible;
         AnalysisProgress.Value = 0;
         AnalysisStatus.Text = "Préparation…";
+        SetAnalysisDeletionEnabled(false);
 
         try
         {
@@ -533,10 +535,177 @@ public sealed partial class SettingsPage : Page
             AnalyzeButton.IsEnabled = true;
             CancelAnalysisButton.Visibility = Visibility.Collapsed;
             AnalysisProgress.Visibility = Visibility.Collapsed;
+            await RefreshAnalysisDataAsync();
         }
     }
 
     private void OnCancelAnalysis(object sender, RoutedEventArgs e) => _analysisCts?.Cancel();
+
+    private void SetAnalysisDeletionEnabled(bool enabled)
+    {
+        ClearOcrButton.IsEnabled = enabled;
+        ClearVisualButton.IsEnabled = enabled;
+        ClearFacesButton.IsEnabled = enabled;
+    }
+
+    /// <summary>
+    /// Reflète l'état des données d'analyse sans jamais compter ni exposer les textes reconnus :
+    /// le catalogue ne fournit pas de décompte OCR, et parcourir chaque souvenir serait coûteux.
+    /// </summary>
+    private async Task RefreshAnalysisDataAsync()
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            AnalysisDataStats.Text = "Ouvrez une bibliothèque pour consulter les données d'analyse.";
+            ClearOcrButton.IsEnabled = false;
+            ClearVisualButton.IsEnabled = false;
+            ClearFacesButton.IsEnabled = false;
+            return;
+        }
+
+        try
+        {
+            var hashes = await library.Analysis.GetVisualHashesAsync();
+            var faces = await library.Analysis.GetFacesAsync();
+            var groups = await library.Analysis.GetPersonGroupsAsync();
+            AnalysisDataStats.Text =
+                $"{hashes.Count} empreinte(s) visuelle(s) · {faces.Count} visage(s) détecté(s) · {groups.Count} groupe(s) de personnes.";
+            ClearOcrButton.IsEnabled = _analysisCts is null;
+            ClearVisualButton.IsEnabled = _analysisCts is null && hashes.Count > 0;
+            ClearFacesButton.IsEnabled = _analysisCts is null && (faces.Count > 0 || groups.Count > 0);
+        }
+        catch (Exception ex)
+        {
+            AnalysisDataStats.Text = "État des données d'analyse indisponible : " + ex.Message;
+        }
+    }
+
+    private async Task<bool> ConfirmAnalysisDeleteAsync(string title, string message, string action)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            PrimaryButtonText = action,
+            CloseButtonText = "Annuler",
+            // L'action destructrice n'est jamais le bouton par défaut.
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    private async void OnClearOcr(object sender, RoutedEventArgs e)
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de supprimer des données d'analyse.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        var confirmed = await ConfirmAnalysisDeleteAsync(
+            "Supprimer les textes reconnus ?",
+            "Les textes issus de l'OCR local seront effacés et ne seront plus trouvés par la recherche texte. " +
+            "Les souvenirs, les médias et les albums ne sont pas modifiés ; une nouvelle analyse peut recalculer les textes.",
+            "Supprimer les textes");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ClearOcrButton.IsEnabled = false;
+        try
+        {
+            await library.Analysis.ClearOcrAsync();
+            await RefreshAnalysisDataAsync();
+            Show("Textes OCR supprimés",
+                "Aucun souvenir n'a été supprimé. Relancez l'analyse pour recalculer les textes reconnus.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Suppression impossible", ex.Message, InfoBarSeverity.Error);
+            await RefreshAnalysisDataAsync();
+        }
+    }
+
+    private async void OnClearVisual(object sender, RoutedEventArgs e)
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de supprimer des données d'analyse.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        var confirmed = await ConfirmAnalysisDeleteAsync(
+            "Supprimer les empreintes visuelles ?",
+            "Les empreintes calculées à partir des miniatures seront effacées et la recherche par ressemblance ne renverra plus de résultats. " +
+            "Aucun souvenir, média ou album n'est supprimé.",
+            "Supprimer les empreintes");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ClearVisualButton.IsEnabled = false;
+        try
+        {
+            await library.Analysis.ClearVisualAsync();
+            await RefreshAnalysisDataAsync();
+            Show("Empreintes supprimées",
+                "Les souvenirs restent intacts. Relancez l'analyse pour recalculer les empreintes.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Suppression impossible", ex.Message, InfoBarSeverity.Error);
+            await RefreshAnalysisDataAsync();
+        }
+    }
+
+    private async void OnClearFaces(object sender, RoutedEventArgs e)
+    {
+        var library = AppState.Current.Library;
+        if (library is null)
+        {
+            Show("Aucune bibliothèque", "Ouvrez une bibliothèque avant de supprimer des données d'analyse.", InfoBarSeverity.Warning);
+            return;
+        }
+
+        var confirmed = await ConfirmAnalysisDeleteAsync(
+            "Supprimer les visages détectés ?",
+            "Les visages détectés et les groupes de personnes proposés, y compris les noms saisis, seront supprimés. " +
+            "Aucun souvenir, média ou album n'est supprimé. Une nouvelle analyse recréera des groupes sans nom.",
+            "Supprimer les visages");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        ClearFacesButton.IsEnabled = false;
+        try
+        {
+            await library.Analysis.ClearFacesAsync();
+            // ClearFacesAsync conserve volontairement les groupes nommés. On les supprime ici
+            // pour ne pas laisser des groupes vides dans l'onglet Personnes.
+            foreach (var group in await library.Analysis.GetPersonGroupsAsync())
+            {
+                await library.Analysis.DeletePersonGroupAsync(group.Id);
+            }
+            await RefreshAnalysisDataAsync();
+            Show("Visages supprimés",
+                "Les souvenirs restent intacts. Une nouvelle analyse peut proposer d'autres groupes, sans nom.",
+                InfoBarSeverity.Success);
+        }
+        catch (Exception ex)
+        {
+            Show("Suppression impossible", ex.Message, InfoBarSeverity.Error);
+            await RefreshAnalysisDataAsync();
+        }
+    }
 
     private void Show(string title, string message, InfoBarSeverity severity)
     {

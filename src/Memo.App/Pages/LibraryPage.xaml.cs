@@ -12,9 +12,13 @@ namespace Memo.App.Pages;
 
 public sealed partial class LibraryPage : Page
 {
+    private const int SearchDelayMs = 275;
+
     private bool _selectionMode;
     private bool _ready;
     private List<MemoryCard> _filtered = new();
+    private CancellationTokenSource? _searchCts;
+    private int _searchGeneration;
 
     public LibraryPage()
     {
@@ -49,48 +53,76 @@ public sealed partial class LibraryPage : Page
         }
     }
 
-    private void Refresh()
-    {
-        if (!_ready)
-        {
-            return;
-        }
-        var state = AppState.Current;
-        IEnumerable<MemoryCard> query = state.Cards;
+    /// <summary>Critères de filtrage capturés depuis l'interface, réutilisables hors du fil UI.</summary>
+    private readonly record struct FilterCriteria(
+        bool UndatedOnly,
+        bool MissingOnly,
+        string TypeTag,
+        int Year,
+        string Search);
 
-        if (UndatedToggle.IsChecked == true)
+    private FilterCriteria CaptureCriteria() => new(
+        UndatedToggle.IsChecked == true,
+        MissingToggle.IsChecked == true,
+        (TypeFilter.SelectedItem as ComboBoxItem)?.Tag as string ?? "all",
+        YearFilter.SelectedItem is ComboBoxItem { Tag: int year } ? year : 0,
+        SearchBox.Text?.Trim() ?? string.Empty);
+
+    private static List<MemoryCard> ApplyFilter(IEnumerable<MemoryCard> cards, FilterCriteria criteria)
+    {
+        IEnumerable<MemoryCard> query = cards;
+
+        if (criteria.UndatedOnly)
         {
             query = query.Where(c => c.LocalDate is null);
         }
-        if (MissingToggle.IsChecked == true)
+        if (criteria.MissingOnly)
         {
             query = query.Where(c => c.Status == MemoryStatus.OverlayOnly);
         }
-        if (TypeFilter.SelectedItem is ComboBoxItem type && type.Tag is string tag && tag != "all")
+        if (criteria.TypeTag == "video")
         {
-            query = tag == "video"
-                ? query.Where(c => c.Kind == MediaKind.Video)
-                : query.Where(c => c.Kind != MediaKind.Video);
+            query = query.Where(c => c.Kind == MediaKind.Video);
         }
-        if (YearFilter.SelectedItem is ComboBoxItem yearItem && yearItem.Tag is int year && year > 0)
+        else if (criteria.TypeTag != "all")
         {
-            query = query.Where(c => c.LocalDate?.Year == year);
+            query = query.Where(c => c.Kind != MediaKind.Video);
         }
-
-        var search = SearchBox.Text?.Trim();
-        if (!string.IsNullOrEmpty(search))
+        if (criteria.Year > 0)
         {
+            query = query.Where(c => c.LocalDate?.Year == criteria.Year);
+        }
+        if (criteria.Search.Length > 0)
+        {
+            var search = criteria.Search;
             query = query.Where(c =>
                 (c.LocationLabel?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 c.ExternalKey.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                 (c.LocalDate?.ToString("dddd d MMMM yyyy", AppState.French).Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
-        _filtered = query
+        return query
             .OrderByDescending(c => c.LocalDate is not null)
             .ThenByDescending(c => c.LocalDate)
             .ThenBy(c => c.ExternalKey)
             .ToList();
+    }
+
+    private void Refresh()
+    {
+        if (!_ready)
+        {
+            return;
+        }
+
+        // Un changement de filtre remplace immédiatement toute frappe encore en attente.
+        CancelPendingSearch();
+        ApplyFiltered(ApplyFilter(AppState.Current.Cards, CaptureCriteria()));
+    }
+
+    private void ApplyFiltered(IReadOnlyList<MemoryCard> filtered)
+    {
+        _filtered = filtered.ToList();
 
         var groups = _filtered
             .Where(c => c.LocalDate is not null)
@@ -108,9 +140,10 @@ public sealed partial class LibraryPage : Page
         var cvs = new CollectionViewSource { IsSourceGrouped = true, Source = groups };
         Grid.ItemsSource = cvs.View;
 
-        CountLabel.Text = _filtered.Count == state.Cards.Count
+        var total = AppState.Current.Cards.Count;
+        CountLabel.Text = _filtered.Count == total
             ? $"{_filtered.Count} souvenir(s)"
-            : $"{_filtered.Count} sur {state.Cards.Count} souvenirs";
+            : $"{_filtered.Count} sur {total} souvenirs";
         EmptyPanel.Visibility = _filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         UpdateSelectionBar();
     }
@@ -125,7 +158,59 @@ public sealed partial class LibraryPage : Page
     {
         if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
         {
-            Refresh();
+            ScheduleSearch();
+        }
+    }
+
+    /// <summary>
+    /// Attend une courte pause avant de filtrer. Chaque frappe annule la passe précédente, et le
+    /// numéro de génération empêche un résultat obsolète d'écraser un texte plus récent.
+    /// </summary>
+    private void ScheduleSearch()
+    {
+        CancelPendingSearch();
+        var generation = ++_searchGeneration;
+        var cts = new CancellationTokenSource();
+        _searchCts = cts;
+        _ = DebouncedSearchAsync(generation, cts);
+    }
+
+    private void CancelPendingSearch()
+    {
+        // La tâche propriétaire du jeton le libère dans son finally.
+        _searchCts?.Cancel();
+        _searchCts = null;
+    }
+
+    private async Task DebouncedSearchAsync(int generation, CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(SearchDelayMs, cts.Token);
+
+            // Les contrôles sont lus sur le fil UI, puis le filtrage s'exécute en arrière-plan.
+            var criteria = CaptureCriteria();
+            var snapshot = AppState.Current.Cards.ToList();
+            var filtered = await Task.Run(() => ApplyFilter(snapshot, criteria), cts.Token);
+
+            cts.Token.ThrowIfCancellationRequested();
+            if (generation != _searchGeneration)
+            {
+                return;
+            }
+            ApplyFiltered(filtered);
+        }
+        catch (OperationCanceledException)
+        {
+            // Frappe remplacée : aucun résultat intermédiaire n'est affiché.
+        }
+        finally
+        {
+            cts.Dispose();
+            if (ReferenceEquals(_searchCts, cts))
+            {
+                _searchCts = null;
+            }
         }
     }
 
@@ -357,6 +442,49 @@ public sealed partial class LibraryPage : Page
         if (!string.IsNullOrWhiteSpace(card.LocationLabel))
         {
             Line("Lieu", card.LocationLabel);
+        }
+
+        // Le texte OCR reste une donnée d'analyse en lecture seule : il est affiché ici sans
+        // jamais remplacer ni compléter la légende d'origine du souvenir.
+        if (AppState.Current.Library is not null)
+        {
+            string ocrMessage;
+            try
+            {
+                var ocrText = await AppState.Current.Library.Analysis.GetOcrTextAsync(card.Id);
+                ocrMessage = string.IsNullOrWhiteSpace(ocrText)
+                    ? "Aucun texte reconnu pour ce souvenir."
+                    : ocrText;
+            }
+            catch (Exception)
+            {
+                // Une bibliothèque fermée pendant l'ouverture de la fiche ne doit pas interrompre l'application.
+                ocrMessage = "Texte OCR indisponible pour le moment.";
+            }
+
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Texte reconnu (OCR)",
+                Style = Widgets.Style("MemoSecondaryTextStyle"),
+                Margin = new Thickness(0, 8, 0, 0)
+            });
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(10),
+                CornerRadius = new CornerRadius(4),
+                Background = (Brush)Application.Current.Resources["MemoSurfaceAltBrush"],
+                BorderBrush = (Brush)Application.Current.Resources["MemoBorderBrush"],
+                BorderThickness = new Thickness(1),
+                Child = new TextBlock
+                {
+                    Text = ocrMessage,
+                    Style = Widgets.Style("MemoBodyTextStyle"),
+                    TextWrapping = TextWrapping.Wrap,
+                    IsTextSelectionEnabled = true
+                }
+            });
+            panel.Children.Add(Widgets.Caption(
+                "Texte issu de l'OCR local, jamais de la légende d'origine. Il peut être supprimé depuis Réglages > Données d'analyse."));
         }
 
         var picker = new CalendarDatePicker
