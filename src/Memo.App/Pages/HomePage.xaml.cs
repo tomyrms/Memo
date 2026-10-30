@@ -2,12 +2,23 @@ using Memo.App.Services;
 using Memo.App.Ui;
 using Memo.Core;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 
 namespace Memo.App.Pages;
 
 public sealed partial class HomePage : Page
 {
+    // Historique des propositions en mode démonstration, qui n'a pas de catalogue.
+    private static readonly List<(long Id, DateTimeOffset At)> DemoSuggestions = new();
+
+    private static int? _lastSurpriseYear;
+
+    private readonly StackPanel _dayCardHost = new();
+
+    private DateOnly? _shownDay;
+    private bool _surpriseRunning;
+
     public HomePage()
     {
         InitializeComponent();
@@ -40,7 +51,18 @@ public sealed partial class HomePage : Page
         head.Children.Add(surprise);
         Root.Children.Add(head);
 
+        if (state.Cards.Count == 0)
+        {
+            Root.Children.Add(Widgets.EmptyState(
+                "Votre bibliothèque est vide",
+                "Importez des photos ou des vidéos pour voir apparaître les souvenirs du jour.",
+                "Importer des médias",
+                () => App.MainWindow?.Navigate("imports")));
+            return;
+        }
+
         var thisDay = state.ThisDay(today)
+            .Where(c => c.Status != MemoryStatus.OverlayOnly)
             .GroupBy(c => c.LocalDate!.Value.Year)
             .OrderByDescending(g => g.Key)
             .ToList();
@@ -76,7 +98,7 @@ public sealed partial class HomePage : Page
                 });
                 rowHead.Children.Add(Widgets.Caption(year.Key.ToString()));
                 Root.Children.Add(rowHead);
-                Root.Children.Add(Widgets.TileRow(years, showDate: false));
+                Root.Children.Add(Widgets.TileRow(years, showDate: false, context: label));
             }
         }
 
@@ -101,19 +123,9 @@ public sealed partial class HomePage : Page
             Root.Children.Add(new Border { Height = 24 });
         }
 
-        var day = PickDay(state, today);
-        Root.Children.Add(Widgets.SectionHeader("Une journée à redécouvrir", "Changer", Surprise));
-        if (day is not null)
-        {
-            Root.Children.Add(DayCard(day.Value.Day, day.Value.Cards));
-        }
-        else
-        {
-            Root.Children.Add(Widgets.EmptyState(
-                "Pas encore de journée à proposer",
-                "Les souvenirs sans date ne reçoivent pas de fausse journée anniversaire.",
-                null, null));
-        }
+        Root.Children.Add(Widgets.SectionHeader("Une journée à redécouvrir", "Changer", ChangeDay));
+        Root.Children.Add(_dayCardHost);
+        FillDayCard();
 
         if (state.Albums.Count > 0)
         {
@@ -121,14 +133,13 @@ public sealed partial class HomePage : Page
             var row = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
-                Spacing = 12,
-                Margin = new Thickness(0, 0, 0, 24)
+                Spacing = 12
             };
             foreach (var album in state.Albums)
             {
                 row.Children.Add(AlbumCard(album));
             }
-            Root.Children.Add(row);
+            Root.Children.Add(Widgets.ScrollRow(row, "Vos albums"));
         }
     }
 
@@ -137,38 +148,228 @@ public sealed partial class HomePage : Page
         App.MainWindow?.Navigate("library");
     }
 
-    private void Surprise()
+    /// <summary>
+    /// Remplace uniquement la journée affichée : le bouton « Changer » garde le focus
+    /// et les autres sections ne sont pas reconstruites.
+    /// </summary>
+    private void ChangeDay() => FillDayCard();
+
+    private void FillDayCard()
     {
+        _dayCardHost.Children.Clear();
         var state = AppState.Current;
-        var days = state.Cards
-            .Where(c => !c.IsExcluded && c.DatePrecision >= DatePrecision.Day && c.LocalDate is not null)
-            .GroupBy(c => c.LocalDate!.Value)
-            .OrderBy(_ => Random.Shared.Next())
-            .FirstOrDefault();
-        if (days is null)
+        var day = PickDay(state, state.Today, _shownDay);
+        if (day is null)
+        {
+            _dayCardHost.Children.Add(Widgets.EmptyState(
+                "Pas encore de journée à proposer",
+                "Les souvenirs sans date ne reçoivent pas de fausse journée anniversaire. Ajoutez une date dans la bibliothèque pour enrichir cette sélection.",
+                "Parcourir la bibliothèque",
+                () => App.MainWindow?.Navigate("library")));
+            return;
+        }
+
+        _shownDay = day.Value.Day;
+        _dayCardHost.Children.Add(DayCard(day.Value.Day, day.Value.Cards));
+    }
+
+    /// <summary>
+    /// Ouvre une Story sur une journée datée. Les suggestions récentes sont évitées
+    /// lorsqu'une alternative existe, sans jamais proposer d'élément masqué, sans date
+    /// ou réduit à un calque isolé.
+    /// </summary>
+    private async void Surprise()
+    {
+        if (_surpriseRunning)
         {
             return;
         }
-        var items = days.OrderBy(c => c.LocalDate).ToList();
-        App.MainWindow?.ShowStory(items, 0);
+
+        _surpriseRunning = true;
+        try
+        {
+            var state = AppState.Current;
+            var today = state.Today;
+            var days = state.Cards
+                .Where(c => IsDatedStoryCandidate(c) && c.LocalDate < today)
+                .GroupBy(c => c.LocalDate!.Value)
+                .Select(g => g.OrderBy(c => c.Id).ToList())
+                .ToList();
+
+            if (days.Count == 0)
+            {
+                ShowNotice("Aucun souvenir daté et disponible à proposer. Les éléments masqués, les calques seuls et les dates inconnues sont ignorés.");
+                return;
+            }
+
+            var recent = await GetRecentSuggestionIdsAsync(state);
+
+            // Une journée entièrement fraîche est préférée ; sinon on retire seulement
+            // les souvenirs déjà proposés récemment, et on retombe sur la journée
+            // complète si tout a déjà été vu.
+            var freshDays = days.Where(d => d.All(c => !recent.Contains(c.Id))).ToList();
+            if (freshDays.Count == 0)
+            {
+                freshDays = days.Where(d => d.Any(c => !recent.Contains(c.Id))).ToList();
+            }
+            if (freshDays.Count == 0)
+            {
+                freshDays = days;
+            }
+
+            // Éviter la journée déjà affichée dans la section, puis deux propositions
+            // consécutives dans la même année, lorsqu'une autre période est disponible.
+            var alternatives = freshDays;
+            if (alternatives.Count > 1 && _shownDay is { } shown)
+            {
+                var withoutShown = alternatives
+                    .Where(d => d[0].LocalDate != shown)
+                    .ToList();
+                if (withoutShown.Count > 0)
+                {
+                    alternatives = withoutShown;
+                }
+            }
+            if (alternatives.Count > 1 && _lastSurpriseYear is { } previousYear)
+            {
+                var otherYears = alternatives
+                    .Where(d => d[0].LocalDate!.Value.Year != previousYear)
+                    .ToList();
+                if (otherYears.Count > 0)
+                {
+                    alternatives = otherYears;
+                }
+            }
+            freshDays = alternatives;
+
+            var picked = freshDays[Random.Shared.Next(freshDays.Count)];
+            _lastSurpriseYear = picked[0].LocalDate!.Value.Year;
+            var items = picked.Where(c => !recent.Contains(c.Id)).ToList();
+            if (items.Count == 0)
+            {
+                items = picked;
+            }
+
+            await RecordSuggestionAsync(state, items);
+            App.MainWindow?.ShowStory(items, 0);
+        }
+        catch
+        {
+            ShowNotice("La sélection n'a pas pu être préparée. Réessayez depuis la bibliothèque.");
+        }
+        finally
+        {
+            _surpriseRunning = false;
+        }
     }
 
-    private static (DateOnly Day, List<MemoryCard> Cards)? PickDay(AppState state, DateOnly today)
+    private static (DateOnly Day, List<MemoryCard> Cards)? PickDay(AppState state, DateOnly today, DateOnly? avoid)
     {
-        var candidates = state.Cards
-            .Where(c => !c.IsExcluded && c.DatePrecision >= DatePrecision.Day && c.LocalDate is not null && c.LocalDate < today)
+        var groups = state.Cards
+            .Where(c => IsDatedStoryCandidate(c) && c.LocalDate < today)
             .GroupBy(c => c.LocalDate!.Value)
-            .Where(g => g.Count() >= 1)
             .OrderByDescending(g => g.Count())
-            .ThenBy(g => Random.Shared.Next())
+            .ThenBy(_ => Random.Shared.Next())
             .Take(4)
             .ToList();
-        if (candidates.Count == 0)
+        if (groups.Count == 0)
         {
             return null;
         }
-        var pick = candidates[Random.Shared.Next(candidates.Count)];
+
+        if (groups.Count > 1 && avoid is { } previous)
+        {
+            var alternatives = groups.Where(g => g.Key != previous).ToList();
+            if (alternatives.Count > 0)
+            {
+                groups = alternatives;
+            }
+        }
+
+        var pick = groups[Random.Shared.Next(groups.Count)];
         return (pick.Key, pick.OrderBy(c => c.Id).ToList());
+    }
+
+    /// <summary>
+    /// Seuls les souvenirs consultables, datés au jour près et non masqués participent
+    /// aux sélections de type anniversaire.
+    /// </summary>
+    private static bool IsDatedStoryCandidate(MemoryCard card)
+        => !card.IsExcluded
+            && card.Status != MemoryStatus.OverlayOnly
+            && card.LocalDate is not null
+            && card.DatePrecision >= DatePrecision.Day;
+
+    private static async Task<HashSet<long>> GetRecentSuggestionIdsAsync(AppState state)
+    {
+        if (state.Library is not null)
+        {
+            try
+            {
+                return (await state.Library.Catalog.GetRecentSuggestionIdsAsync(14)).ToHashSet();
+            }
+            catch
+            {
+                // L'historique est un confort : une erreur de catalogue ne bloque pas la sélection.
+                return new HashSet<long>();
+            }
+        }
+
+        var since = DateTimeOffset.UtcNow.AddDays(-14);
+        DemoSuggestions.RemoveAll(s => s.At < since);
+        return DemoSuggestions.Select(s => s.Id).ToHashSet();
+    }
+
+    private static async Task RecordSuggestionAsync(AppState state, IReadOnlyList<MemoryCard> cards)
+    {
+        var ids = cards.Select(c => c.Id).Distinct().ToList();
+        if (state.Library is not null)
+        {
+            try
+            {
+                await state.Library.Catalog.RecordSuggestionAsync(ids);
+            }
+            catch
+            {
+                // L'historique est un confort : son échec ne doit pas empêcher la lecture.
+            }
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        DemoSuggestions.RemoveAll(s => s.At < now.AddDays(-14));
+        foreach (var id in ids)
+        {
+            DemoSuggestions.RemoveAll(s => s.Id == id);
+            DemoSuggestions.Add((id, now));
+        }
+    }
+
+    /// <summary>
+    /// Bandeau refermable en haut de page, sans empiler plusieurs messages.
+    /// </summary>
+    private void ShowNotice(string message)
+    {
+        for (var i = Root.Children.Count - 1; i >= 0; i--)
+        {
+            if (Root.Children[i] is InfoBar { Tag: "surprise" } previous)
+            {
+                Root.Children.RemoveAt(i);
+            }
+        }
+
+        var notice = new InfoBar
+        {
+            Title = "Surprends-moi",
+            Message = message,
+            Severity = InfoBarSeverity.Informational,
+            IsClosable = true,
+            IsOpen = true,
+            Margin = new Thickness(0, 0, 0, 16),
+            Tag = "surprise"
+        };
+        notice.Closed += (_, _) => Root.Children.Remove(notice);
+        Root.Children.Insert(Math.Min(1, Root.Children.Count), notice);
     }
 
     private UIElement DayCard(DateOnly day, IReadOnlyList<MemoryCard> cards)
@@ -238,10 +439,8 @@ public sealed partial class HomePage : Page
             Padding = new Thickness(0),
             HorizontalContentAlignment = HorizontalAlignment.Left
         };
+        AutomationProperties.SetName(button, $"Album {album.Name}, {album.ItemCount} souvenir(s)");
         button.Click += (_, _) => App.MainWindow?.Navigate("albums");
         return button;
     }
 }
-
-
-
