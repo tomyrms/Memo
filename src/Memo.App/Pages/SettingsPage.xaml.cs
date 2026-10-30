@@ -444,18 +444,35 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
+        var target = Path.Combine(parent.Path, $"Memo-restaure-{DateTime.Now:yyyyMMdd-HHmmss}");
+
+        // La restauration ne dépend pas de la bibliothèque ouverte : elle reste
+        // disponible au premier lancement, en mode démonstration.
         try
         {
             Show("Restauration en cours", "La sauvegarde est vérifiée puis extraite dans un dossier vide.", InfoBarSeverity.Informational);
-            var target = Path.Combine(parent.Path, $"Memo-restaure-{DateTime.Now:yyyyMMdd-HHmm}");
             await AppState.Current.RestoreAsync(file.Path, target);
+        }
+        catch (Exception ex)
+        {
+            // Aucune écriture n'a touché la bibliothèque en cours : elle reste ouverte.
+            Show("Restauration impossible", ex.Message, InfoBarSeverity.Error);
+            return;
+        }
+
+        try
+        {
+            // L'ouverture bascule seulement si la bibliothèque restaurée est
+            // entièrement lisible ; sinon l'ancienne reste active.
             await AppState.Current.OpenLibraryAsync(target);
             Initialize();
             Show("Restauration terminée", $"{AppState.Current.Cards.Count} souvenir(s) restaurés dans {target}.", InfoBarSeverity.Success);
         }
         catch (Exception ex)
         {
-            Show("Restauration impossible", ex.Message, InfoBarSeverity.Error);
+            Show("Sauvegarde restaurée mais non ouverte",
+                $"Les fichiers ont été extraits dans {target}, mais la bibliothèque n'a pas pu être ouverte : {ex.Message}",
+                InfoBarSeverity.Warning);
         }
     }
     private async void OnOpenLicenses(object sender, RoutedEventArgs e)
